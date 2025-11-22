@@ -1,0 +1,48 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 255 255 255;
+    --foreground: 31 41 55;
+    --card: 255 255 255;
+    --border: 229 231 235;
+    --primary: 16 185 129;
+  }
+
+  .dark {
+    --background: 31 41 55;
+    --foreground: 249 250 251;
+    --card: 17 24 39;
+    --border: 55 65 81;
+    --primary: 16 185 129;
+  }
+}
+
+@layer base {
+  body {
+    @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100;
+  }
+}
+
+/* React DatePicker styles */
+.react-datepicker-wrapper {
+  width: 100%;
+}
+
+.react-datepicker__input-container input {
+  width: 100%;
+  padding: 0.5rem;
+  border-radius: 0.375rem;
+  border: 1px solid rgb(229 231 235);
+  background-color: white;
+  color: rgb(17 24 39);
+}
+
+.dark .react-datepicker__input-container input {
+  border-color: rgb(55 65 81);
+  background-color: rgb(31 41 55);
+  color: rgb(249 250 251);
+}
+

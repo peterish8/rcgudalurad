@@ -40,10 +40,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     document.documentElement.classList.toggle('dark', newTheme === 'dark')
   }
 
-  if (!mounted) {
-    return <>{children}</>
-  }
-
+  // Always return the Provider to maintain consistent hook order
+  // The theme will be applied via useEffect once mounted
   return (
     <ThemeContext.Provider value={{ theme, toggleTheme }}>
       {children}

@@ -57,6 +57,8 @@ export default function BoardMembersPage() {
   };
 
   useEffect(() => {
+    if (typeof window === 'undefined') return;
+    
     const handleClickOutside = (event: MouseEvent) => {
       const target = event.target as HTMLElement;
       // Don't close if clicking inside the dropdown or the badge button
@@ -74,7 +76,9 @@ export default function BoardMembersPage() {
     }
 
     return () => {
-      document.removeEventListener("click", handleClickOutside, true);
+      if (typeof window !== 'undefined') {
+        document.removeEventListener("click", handleClickOutside, true);
+      }
     };
   }, [openSectionDropdown]);
 

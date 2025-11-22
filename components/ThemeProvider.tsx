@@ -16,6 +16,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [mounted, setMounted] = useState(false)
 
   useEffect(() => {
+    if (typeof window === 'undefined') return
+    
     setMounted(true)
     const savedTheme = localStorage.getItem('theme') as Theme
     if (savedTheme) {
@@ -30,6 +32,8 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const toggleTheme = () => {
+    if (typeof window === 'undefined') return
+    
     const newTheme = theme === 'light' ? 'dark' : 'light'
     setTheme(newTheme)
     localStorage.setItem('theme', newTheme)

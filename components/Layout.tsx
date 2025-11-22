@@ -49,6 +49,8 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
   // Resize handlers
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
     const handleMouseMove = (e: MouseEvent) => {
       if (!isResizing) return;
 
@@ -76,7 +78,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       setIsResizing(false);
     };
 
-    if (isResizing) {
+    if (isResizing && typeof window !== "undefined") {
       document.addEventListener("mousemove", handleMouseMove);
       document.addEventListener("mouseup", handleMouseUp);
       document.body.style.cursor = "col-resize";
@@ -84,10 +86,12 @@ export function Layout({ children }: { children: React.ReactNode }) {
     }
 
     return () => {
-      document.removeEventListener("mousemove", handleMouseMove);
-      document.removeEventListener("mouseup", handleMouseUp);
-      document.body.style.cursor = "";
-      document.body.style.userSelect = "";
+      if (typeof window !== "undefined") {
+        document.removeEventListener("mousemove", handleMouseMove);
+        document.removeEventListener("mouseup", handleMouseUp);
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+      }
     };
   }, [isResizing]);
 

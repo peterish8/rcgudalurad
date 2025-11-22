@@ -11,8 +11,10 @@ import {
   Search,
   Loader2,
   Image as ImageIcon,
-  X,
   ArrowLeft,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -36,6 +38,12 @@ export default function GalleryPage() {
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [viewingImage, setViewingImage] = useState<string | null>(null);
   const [imageLoadError, setImageLoadError] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [touchStartDistance, setTouchStartDistance] = useState<number | null>(null);
+  const [touchStartZoom, setTouchStartZoom] = useState(1);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -105,7 +113,94 @@ export default function GalleryPage() {
       setImageLoadError(false);
       setViewingImage(imageUrl);
     }
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
     setIsImageViewerOpen(true);
+    
+    // Prevent page zoom when image viewer is open
+    document.body.style.overflow = "hidden";
+    document.body.style.touchAction = "none";
+  };
+
+  const handleZoomIn = () => {
+    setZoom((prev) => Math.min(prev + 0.25, 3));
+  };
+
+  const handleZoomOut = () => {
+    setZoom((prev) => Math.max(prev - 0.25, 0.5));
+  };
+
+  const handleResetZoom = () => {
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+  };
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && zoom > 1) {
+      setPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  const handleWheel = (e: React.WheelEvent) => {
+    if (e.ctrlKey || e.metaKey) {
+      e.preventDefault();
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setZoom((prev) => Math.max(0.5, Math.min(3, prev + delta)));
+    }
+  };
+
+  const getTouchDistance = (touches: React.TouchList): number => {
+    const touch1 = touches[0];
+    const touch2 = touches[1];
+    const dx = touch2.clientX - touch1.clientX;
+    const dy = touch2.clientY - touch1.clientY;
+    return Math.sqrt(dx * dx + dy * dy);
+  };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.touches.length === 2) {
+      const distance = getTouchDistance(e.touches);
+      setTouchStartDistance(distance);
+      setTouchStartZoom(zoom);
+    }
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.touches.length === 2 && touchStartDistance !== null) {
+      const distance = getTouchDistance(e.touches);
+      const scale = distance / touchStartDistance;
+      const newZoom = Math.max(0.5, Math.min(3, touchStartZoom * scale));
+      setZoom(newZoom);
+    } else if (e.touches.length === 1) {
+      // Single touch - allow panning when zoomed
+      if (zoom > 1) {
+        // Pan logic can be added here if needed
+      }
+    }
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setTouchStartDistance(null);
   };
 
   const confirmDelete = async () => {
@@ -254,16 +349,19 @@ export default function GalleryPage() {
                   key={item.id}
                   className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden"
                 >
-                  <div className="relative aspect-video bg-gray-100 dark:bg-gray-700">
+                  <div 
+                    className="relative aspect-video bg-gray-100 dark:bg-gray-700 cursor-pointer hover:opacity-90 transition-opacity"
+                    onClick={() => handleViewImage(item.image_url)}
+                  >
                     {item.image_url ? (
                       <img
                         src={item.image_url}
                         alt={item.title}
-                        className="w-full h-full object-cover cursor-pointer"
-                        onClick={() => handleViewImage(item.image_url)}
+                        className="w-full h-full object-cover"
                         onError={(e) => {
                           e.currentTarget.style.display = "none";
                         }}
+                        draggable={false}
                       />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center">
@@ -282,14 +380,20 @@ export default function GalleryPage() {
                     )}
                     <div className="flex justify-end space-x-2">
                       <button
-                        onClick={() => handleEdit(item)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(item);
+                        }}
                         className="p-2 text-primary hover:bg-primary/10 rounded transition-colors"
                         title="Edit"
                       >
                         <Edit className="h-5 w-5" />
                       </button>
                       <button
-                        onClick={() => handleDelete(item.id)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(item.id);
+                        }}
                         className="p-2 text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded transition-colors"
                         title="Delete"
                       >
@@ -415,67 +519,120 @@ export default function GalleryPage() {
           {isImageViewerOpen && (
             <div
               className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
+              style={{ touchAction: "none" }}
               onClick={(e) => {
                 if (e.target === e.currentTarget) {
                   setIsImageViewerOpen(false);
                   setViewingImage(null);
                   setImageLoadError(false);
+                  setZoom(1);
+                  setPosition({ x: 0, y: 0 });
+                  // Restore page scroll and touch
+                  document.body.style.overflow = "";
+                  document.body.style.touchAction = "";
                 }
               }}
             >
               <div className="relative max-w-4xl max-h-full w-full">
-                <button
-                  onClick={() => {
-                    setIsImageViewerOpen(false);
-                    setViewingImage(null);
-                    setImageLoadError(false);
-                  }}
-                  className="absolute top-4 right-4 text-white hover:text-gray-300 bg-black/50 rounded-full p-2 z-10 transition-colors"
-                >
-                  <X className="h-6 w-6" />
-                </button>
+                {/* Controls - Top Left Corner */}
+                <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+                  {/* Go Back Button */}
+                  <button
+                    onClick={() => {
+                      setIsImageViewerOpen(false);
+                      setViewingImage(null);
+                      setImageLoadError(false);
+                      setZoom(1);
+                      setPosition({ x: 0, y: 0 });
+                    }}
+                    className="text-white hover:text-gray-300 bg-black/50 rounded-full p-2 transition-colors"
+                    title="Go Back"
+                  >
+                    <ArrowLeft className="h-6 w-6" />
+                  </button>
+
+                  {/* Zoom Controls */}
+                  {!imageLoadError && viewingImage && (
+                    <>
+                      <button
+                        onClick={handleZoomIn}
+                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={handleZoomOut}
+                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="h-5 w-5" />
+                      </button>
+                      {zoom !== 1 && (
+                        <>
+                          <button
+                            onClick={handleResetZoom}
+                            className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                            title="Reset Zoom"
+                          >
+                            <RotateCcw className="h-5 w-5" />
+                          </button>
+                          {/* Zoom Indicator */}
+                          <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
+                            {Math.round(zoom * 100)}%
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
                 {imageLoadError || !viewingImage ? (
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
                     <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                       Image Not Available
                     </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
                       Still didn't upload anything
                     </p>
-                    <button
-                      onClick={() => {
-                        setIsImageViewerOpen(false);
-                        setViewingImage(null);
-                        setImageLoadError(false);
-                      }}
-                      className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
-                    >
-                      <ArrowLeft className="h-4 w-4 mr-2" />
-                      Go Back
-                    </button>
                   </div>
                 ) : (
-                  <div className="relative">
-                    <img
-                      src={viewingImage}
-                      alt="Full size"
-                      className="max-w-full max-h-[90vh] object-contain rounded mx-auto"
-                      onError={() => {
-                        setImageLoadError(true);
-                      }}
-                    />
-                    <button
-                      onClick={() => {
-                        setIsImageViewerOpen(false);
-                        setViewingImage(null);
-                        setImageLoadError(false);
-                      }}
-                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 inline-flex items-center px-4 py-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                  <div className="relative w-full h-full">
+
+                    {/* Image Container */}
+                    <div
+                      className="w-full h-[90vh] overflow-hidden cursor-move flex items-center justify-center touch-none"
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                      onWheel={handleWheel}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
+                      style={{ touchAction: "none", userSelect: "none" }}
                     >
-                      <ArrowLeft className="h-4 w-4 mr-2" />
-                      Go Back
-                    </button>
+                      <img
+                        src={viewingImage}
+                        alt="Full size"
+                        className="rounded transition-transform duration-200"
+                        style={{
+                          maxWidth: "90vw",
+                          maxHeight: "85vh",
+                          width: "auto",
+                          height: "auto",
+                          transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+                          transformOrigin: "center center",
+                          cursor: zoom > 1 ? "move" : "default",
+                        }}
+                        onError={() => {
+                          setImageLoadError(true);
+                        }}
+                        draggable={false}
+                      />
+                    </div>
                   </div>
                 )}
               </div>

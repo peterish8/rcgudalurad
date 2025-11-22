@@ -11,6 +11,9 @@ import {
   Search,
   Loader2,
   Calendar as CalendarIcon,
+  X,
+  Image as ImageIcon,
+  ArrowLeft,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -33,8 +36,11 @@ export default function EventsPage() {
   const [searchTerm, setSearchTerm] = useState("");
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  const [imageLoadError, setImageLoadError] = useState(false);
   const [formData, setFormData] = useState({
     title: "",
     description: "",
@@ -99,6 +105,17 @@ export default function EventsPage() {
   const handleDelete = (id: string) => {
     setDeleteTarget(id);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleViewImage = (imageUrl: string | null) => {
+    if (!imageUrl || imageUrl.trim() === "") {
+      setImageLoadError(true);
+      setViewingImage(null);
+    } else {
+      setImageLoadError(false);
+      setViewingImage(imageUrl);
+    }
+    setIsImageViewerOpen(true);
   };
 
   const confirmDelete = async () => {
@@ -281,18 +298,12 @@ export default function EventsPage() {
                           {event.description || "-"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          {event.image_url ? (
-                            <a
-                              href={event.image_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-primary hover:underline"
-                            >
-                              View
-                            </a>
-                          ) : (
-                            "-"
-                          )}
+                          <button
+                            onClick={() => handleViewImage(event.image_url)}
+                            className="text-primary hover:underline"
+                          >
+                            View
+                          </button>
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button
@@ -420,6 +431,77 @@ export default function EventsPage() {
               </div>
             </form>
           </Modal>
+
+          {/* Image Viewer Modal */}
+          {isImageViewerOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setIsImageViewerOpen(false);
+                  setViewingImage(null);
+                  setImageLoadError(false);
+                }
+              }}
+            >
+              <div className="relative max-w-4xl max-h-full w-full">
+                <button
+                  onClick={() => {
+                    setIsImageViewerOpen(false);
+                    setViewingImage(null);
+                    setImageLoadError(false);
+                  }}
+                  className="absolute top-4 right-4 text-white hover:text-gray-300 bg-black/50 rounded-full p-2 z-10 transition-colors"
+                >
+                  <X className="h-6 w-6" />
+                </button>
+                {imageLoadError || !viewingImage ? (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
+                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      Image Not Available
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
+                      Still didn't upload anything
+                    </p>
+                    <button
+                      onClick={() => {
+                        setIsImageViewerOpen(false);
+                        setViewingImage(null);
+                        setImageLoadError(false);
+                      }}
+                      className="inline-flex items-center px-4 py-2 bg-primary text-white rounded-lg hover:bg-primary-dark transition-colors"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Go Back
+                    </button>
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <img
+                      src={viewingImage}
+                      alt="Event image"
+                      className="max-w-full max-h-[90vh] object-contain rounded mx-auto"
+                      onError={() => {
+                        setImageLoadError(true);
+                      }}
+                    />
+                    <button
+                      onClick={() => {
+                        setIsImageViewerOpen(false);
+                        setViewingImage(null);
+                        setImageLoadError(false);
+                      }}
+                      className="absolute bottom-4 left-1/2 transform -translate-x-1/2 inline-flex items-center px-4 py-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                    >
+                      <ArrowLeft className="h-4 w-4 mr-2" />
+                      Go Back
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Delete Confirmation Dialog */}
           <ConfirmDialog

@@ -118,8 +118,10 @@ export default function GalleryPage() {
     setIsImageViewerOpen(true);
     
     // Prevent page zoom when image viewer is open
-    document.body.style.overflow = "hidden";
-    document.body.style.touchAction = "none";
+    if (typeof window !== "undefined") {
+      document.body.style.overflow = "hidden";
+      document.body.style.touchAction = "none";
+    }
   };
 
   const handleZoomIn = () => {
@@ -528,8 +530,10 @@ export default function GalleryPage() {
                   setZoom(1);
                   setPosition({ x: 0, y: 0 });
                   // Restore page scroll and touch
-                  document.body.style.overflow = "";
-                  document.body.style.touchAction = "";
+                  if (typeof window !== "undefined") {
+                    document.body.style.overflow = "";
+                    document.body.style.touchAction = "";
+                  }
                 }
               }}
             >

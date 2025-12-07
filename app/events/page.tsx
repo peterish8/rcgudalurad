@@ -16,6 +16,7 @@ import {
   ZoomIn,
   ZoomOut,
   RotateCcw,
+  Upload,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -57,6 +58,11 @@ export default function EventsPage() {
     event_date: new Date(),
     image_url: "",
   });
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [filePreview, setFilePreview] = useState<string | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isDragOver, setIsDragOver] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
@@ -96,6 +102,8 @@ export default function EventsPage() {
       event_date: new Date(),
       image_url: "",
     });
+    setSelectedFile(null);
+    setFilePreview(null);
     setError("");
     setIsModalOpen(true);
   };
@@ -108,6 +116,8 @@ export default function EventsPage() {
       event_date: new Date(event.event_date),
       image_url: event.image_url || "",
     });
+    setSelectedFile(null);
+    setFilePreview(null);
     setError("");
     setIsModalOpen(true);
   };
@@ -236,17 +246,127 @@ export default function EventsPage() {
     }
   };
 
+  // File upload helpers
+  const MAX_FILE_SIZE = 6 * 1024 * 1024; // 6MB
+  const ALLOWED_FILE_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
+
+  const formatFileSize = (bytes: number): string => {
+    if (bytes < 1024) return bytes + " B";
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + " KB";
+    return (bytes / (1024 * 1024)).toFixed(2) + " MB";
+  };
+
+  const validateFile = (file: File): string | null => {
+    if (!ALLOWED_FILE_TYPES.includes(file.type)) {
+      return "Invalid file type. Please upload a JPEG, PNG, WebP, or GIF image.";
+    }
+    if (file.size > MAX_FILE_SIZE) {
+      return "File is too large. Maximum size is 6MB.";
+    }
+    return null;
+  };
+
+  const handleFileSelect = (file: File) => {
+    const validationError = validateFile(file);
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+    setError("");
+    setSelectedFile(file);
+    
+    // Create preview URL
+    const previewUrl = URL.createObjectURL(file);
+    setFilePreview(previewUrl);
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragOver(false);
+    const file = e.dataTransfer.files?.[0];
+    if (file) {
+      handleFileSelect(file);
+    }
+  };
+
+  const uploadFileToStorage = async (file: File): Promise<string> => {
+    setIsUploading(true);
+    setUploadProgress(0);
+
+    try {
+      // Generate unique filename
+      const fileExt = file.name.split(".").pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
+      
+      setUploadProgress(30);
+
+      const { data, error } = await supabase.storage
+        .from("events-images")
+        .upload(fileName, file, {
+          cacheControl: "3600",
+          upsert: false,
+        });
+
+      if (error) throw error;
+
+      setUploadProgress(80);
+
+      // Get public URL
+      const { data: urlData } = supabase.storage
+        .from("events-images")
+        .getPublicUrl(data.path);
+
+      setUploadProgress(100);
+      
+      return urlData.publicUrl;
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const clearFileSelection = () => {
+    setSelectedFile(null);
+    if (filePreview) {
+      URL.revokeObjectURL(filePreview);
+      setFilePreview(null);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSubmitting(true);
 
     try {
+      let imageUrl = formData.image_url.trim();
+
+      // If a file is selected, upload it first
+      if (selectedFile) {
+        imageUrl = await uploadFileToStorage(selectedFile);
+      }
+
       const eventData = {
         title: formData.title.trim(),
         description: formData.description.trim() || null,
         event_date: format(formData.event_date, "yyyy-MM-dd"),
-        image_url: formData.image_url.trim() || null,
+        image_url: imageUrl || null,
       };
 
       if (selectedEvent) {
@@ -273,11 +393,13 @@ export default function EventsPage() {
         image_url: "",
       });
       setSelectedEvent(null);
+      clearFileSelection();
     } catch (err: any) {
       console.error("Error saving event:", err);
       setError(err.message || err.code || "Failed to save event");
     } finally {
       setSubmitting(false);
+      setUploadProgress(0);
     }
   };
 
@@ -296,6 +418,9 @@ export default function EventsPage() {
               </h1>
               <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
                 Create, edit, and delete events
+              </p>
+              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                📁 Max file size: 6MB per image
               </p>
             </div>
             <button
@@ -487,9 +612,105 @@ export default function EventsPage() {
                 />
               </div>
 
+              {/* File Upload Section */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Image URL
+                  Upload Image
+                </label>
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`relative border-2 border-dashed rounded-lg p-6 text-center transition-colors ${
+                    isDragOver
+                      ? "border-primary bg-primary/5"
+                      : "border-gray-300 dark:border-gray-600 hover:border-primary"
+                  }`}
+                >
+                  {filePreview ? (
+                    <div className="space-y-3">
+                      <img
+                        src={filePreview}
+                        alt="Preview"
+                        className="mx-auto max-h-48 rounded-lg object-cover"
+                      />
+                      <div className="flex flex-col items-center gap-1">
+                        <div className="flex items-center gap-2">
+                          <span className="text-sm text-gray-600 dark:text-gray-400">
+                            {selectedFile?.name}
+                          </span>
+                          <span className="text-sm font-medium text-primary">
+                            ({selectedFile ? formatFileSize(selectedFile.size) : ""})
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={clearFileSelection}
+                          className="text-red-500 hover:text-red-700 text-sm underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <Upload className="mx-auto h-10 w-10 text-gray-400" />
+                      <div>
+                        <label className="cursor-pointer">
+                          <span className="text-primary hover:text-primary-dark font-medium">
+                            Click to upload
+                          </span>
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp,image/gif"
+                            onChange={handleFileInputChange}
+                            className="hidden"
+                          />
+                        </label>
+                        <span className="text-gray-500 dark:text-gray-400">
+                          {" "}or drag and drop
+                        </span>
+                      </div>
+                      <p className="text-xs text-gray-400 dark:text-gray-500">
+                        JPEG, PNG, WebP, GIF up to 6MB
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                {/* Upload Progress */}
+                {isUploading && (
+                  <div className="mt-3">
+                    <div className="flex items-center justify-between text-sm mb-1">
+                      <span className="text-gray-600 dark:text-gray-400">Uploading...</span>
+                      <span className="text-primary">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                      <div
+                        className="bg-primary h-2 rounded-full transition-all duration-300"
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* OR Divider */}
+              <div className="relative">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-gray-300 dark:border-gray-600" />
+                </div>
+                <div className="relative flex justify-center text-sm">
+                  <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
+                    OR
+                  </span>
+                </div>
+              </div>
+
+              {/* URL Input (Fallback) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Image URL (optional)
                 </label>
                 <input
                   type="url"
@@ -499,6 +720,7 @@ export default function EventsPage() {
                   }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
                   placeholder="https://example.com/image.jpg"
+                  disabled={!!selectedFile}
                 />
               </div>
 

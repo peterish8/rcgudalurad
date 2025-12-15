@@ -4,17 +4,19 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { Calendar, Image as ImageIcon, Users, Loader2 } from "lucide-react";
+import { Calendar, Image as ImageIcon, Users, MessageSquare, Loader2 } from "lucide-react";
 
 export default function DashboardPage() {
   const [stats, setStats] = useState<{
     events: number | null;
     gallery: number | null;
     boardMembers: number | null;
+    unreadMessages: number | null;
   }>({
     events: null,
     gallery: null,
     boardMembers: null,
+    unreadMessages: null,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -22,22 +24,28 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchStats() {
       try {
-        const [eventsRes, galleryRes, membersRes] = await Promise.all([
+        const [eventsRes, galleryRes, membersRes, messagesRes] = await Promise.all([
           supabase.from("events").select("id", { count: "exact", head: true }),
           supabase.from("gallery").select("id", { count: "exact", head: true }),
           supabase
             .from("board_members")
             .select("id", { count: "exact", head: true }),
+          supabase
+            .from("contact_submissions")
+            .select("id", { count: "exact", head: true })
+            .eq("is_read", false),
         ]);
 
         if (eventsRes.error) throw eventsRes.error;
         if (galleryRes.error) throw galleryRes.error;
         if (membersRes.error) throw membersRes.error;
+        if (messagesRes.error) throw messagesRes.error;
 
         setStats({
           events: eventsRes.count ?? 0,
           gallery: galleryRes.count ?? 0,
           boardMembers: membersRes.count ?? 0,
+          unreadMessages: messagesRes.count ?? 0,
         });
         setError(null);
       } catch (err: any) {
@@ -49,6 +57,7 @@ export default function DashboardPage() {
           events: null,
           gallery: null,
           boardMembers: null,
+          unreadMessages: null,
         });
       } finally {
         setLoading(false);
@@ -79,6 +88,13 @@ export default function DashboardPage() {
       icon: Users,
       href: "/board-members",
       color: "bg-green-500",
+    },
+    {
+      name: "Unread Messages",
+      value: stats.unreadMessages,
+      icon: MessageSquare,
+      href: "/contact-submissions",
+      color: "bg-orange-500",
     },
   ].filter((card) => card.value !== null);
 
@@ -113,7 +129,7 @@ export default function DashboardPage() {
               </p>
             </div>
           ) : (
-            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
               {statCards.map((card) => {
                 const Icon = card.icon;
                 return (
@@ -145,7 +161,7 @@ export default function DashboardPage() {
             <h2 className="text-lg font-semibold text-gray-900 dark:text-white mb-4">
               Quick Actions
             </h2>
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
               <a
                 href="/events"
                 className="flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
@@ -166,6 +182,13 @@ export default function DashboardPage() {
               >
                 <Users className="h-5 w-5 mr-2" />
                 Manage Board Members
+              </a>
+              <a
+                href="/contact-submissions"
+                className="flex items-center justify-center px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg text-sm font-medium text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+              >
+                <MessageSquare className="h-5 w-5 mr-2" />
+                View Messages
               </a>
             </div>
           </div>

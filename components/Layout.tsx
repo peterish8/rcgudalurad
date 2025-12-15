@@ -8,6 +8,7 @@ import {
   Calendar,
   Image as ImageIcon,
   Users,
+  MessageSquare,
   LogOut,
   Moon,
   Sun,
@@ -41,6 +42,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { name: "Events", href: "/events", icon: Calendar },
     { name: "Gallery", href: "/gallery", icon: ImageIcon },
     { name: "Board Members", href: "/board-members", icon: Users },
+    { name: "Contact Submissions", href: "/contact-submissions", icon: MessageSquare },
   ];
 
   const handleLogout = async () => {

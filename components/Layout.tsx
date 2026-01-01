@@ -40,7 +40,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   const navigation = [
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Events", href: "/events", icon: Calendar },
-    { name: "Gallery", href: "/gallery", icon: ImageIcon },
     { name: "Board Members", href: "/board-members", icon: Users },
     { name: "Contact Submissions", href: "/contact-submissions", icon: MessageSquare },
   ];

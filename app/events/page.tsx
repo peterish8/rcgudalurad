@@ -17,6 +17,9 @@ import {
   ZoomOut,
   RotateCcw,
   Upload,
+  X,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -30,6 +33,8 @@ interface Event {
   description: string | null;
   event_date: string;
   image_url: string | null;
+  extra_images: string[] | null;
+  is_upcoming: boolean;
   created_at: string;
 }
 
@@ -42,7 +47,10 @@ export default function EventsPage() {
   const [isImageViewerOpen, setIsImageViewerOpen] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<Event | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [viewingImage, setViewingImage] = useState<string | null>(null);
+  
+  // Image Viewer State
+  const [viewingImages, setViewingImages] = useState<string[]>([]);
+  const [viewingIndex, setViewingIndex] = useState(0);
   const [imageLoadError, setImageLoadError] = useState(false);
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
@@ -57,6 +65,7 @@ export default function EventsPage() {
     description: "",
     event_date: new Date(),
     image_url: "",
+    is_upcoming: true,
   });
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
@@ -66,6 +75,13 @@ export default function EventsPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
+
+  // Gallery images state
+  const [galleryFiles, setGalleryFiles] = useState<File[]>([]);
+  const [galleryPreviews, setGalleryPreviews] = useState<string[]>([]);
+  const [existingGalleryImages, setExistingGalleryImages] = useState<string[]>([]);
+  const [deletedGalleryImages, setDeletedGalleryImages] = useState<string[]>([]);
+  const [galleryUploadProgress, setGalleryUploadProgress] = useState(0);
 
   useEffect(() => {
     fetchEvents();
@@ -101,9 +117,14 @@ export default function EventsPage() {
       description: "",
       event_date: new Date(),
       image_url: "",
+      is_upcoming: true,
     });
     setSelectedFile(null);
     setFilePreview(null);
+    setGalleryFiles([]);
+    setGalleryPreviews([]);
+    setExistingGalleryImages([]);
+    setDeletedGalleryImages([]);
     setError("");
     setIsModalOpen(true);
   };
@@ -115,9 +136,14 @@ export default function EventsPage() {
       description: event.description || "",
       event_date: new Date(event.event_date),
       image_url: event.image_url || "",
+      is_upcoming: event.is_upcoming ?? true, // Default to true if undefined (legacy data)
     });
     setSelectedFile(null);
     setFilePreview(null);
+    setExistingGalleryImages(event.extra_images || []);
+    setGalleryFiles([]);
+    setGalleryPreviews([]);
+    setDeletedGalleryImages([]);
     setError("");
     setIsModalOpen(true);
   };
@@ -127,13 +153,14 @@ export default function EventsPage() {
     setIsDeleteDialogOpen(true);
   };
 
-  const handleViewImage = (imageUrl: string | null) => {
-    if (!imageUrl || imageUrl.trim() === "") {
+  const handleViewImage = (images: string[], startIndex: number = 0) => {
+    if (!images || images.length === 0) {
       setImageLoadError(true);
-      setViewingImage(null);
+      setViewingImages([]);
     } else {
       setImageLoadError(false);
-      setViewingImage(imageUrl);
+      setViewingImages(images.filter(img => img && img.trim() !== ""));
+      setViewingIndex(startIndex);
     }
     setZoom(1);
     setPosition({ x: 0, y: 0 });
@@ -146,8 +173,38 @@ export default function EventsPage() {
     }
   };
 
+  const handleNextImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setViewingIndex((prev) => (prev + 1) % viewingImages.length); // Loop to start
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+    setImageLoadError(false);
+  };
+
+  const handlePrevImage = (e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setViewingIndex((prev) => (prev - 1 + viewingImages.length) % viewingImages.length); // Loop to end
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+    setImageLoadError(false);
+  };
+
+  const handleCloseImageViewer = () => {
+    setIsImageViewerOpen(false);
+    setViewingImages([]);
+    setViewingIndex(0);
+    setImageLoadError(false);
+    setZoom(1);
+    setPosition({ x: 0, y: 0 });
+    // Restore page scroll and touch
+    if (typeof window !== "undefined") {
+      document.body.style.overflow = "";
+      document.body.style.touchAction = "";
+    }
+  };
+
   const handleZoomIn = () => {
-    setZoom((prev) => Math.min(prev + 0.25, 3));
+    setZoom((prev) => Math.min(prev + 0.5, 3));
   };
 
   const handleZoomOut = () => {
@@ -349,6 +406,103 @@ export default function EventsPage() {
     }
   };
 
+  // Extract storage path from public URL
+  const extractFilePathFromUrl = (publicUrl: string): string => {
+    const match = publicUrl.match(/events-images\/(.+)$/);
+    return match ? match[1] : '';
+  };
+
+  // Upload multiple gallery files
+  const uploadGalleryFiles = async (files: File[], eventId: string): Promise<string[]> => {
+    const uploadedUrls: string[] = [];
+    const totalFiles = files.length;
+    
+    for (let i = 0; i < totalFiles; i++) {
+      const file = files[i];
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${fileExt}`;
+      const filePath = `${eventId}/${fileName}`;
+      
+      // Update progress
+      setGalleryUploadProgress(Math.round(((i + 0.5) / totalFiles) * 100));
+      
+      const { data, error } = await supabase.storage
+        .from('events-images')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: false,
+        });
+      
+      if (error) throw error;
+      
+      const { data: urlData } = supabase.storage
+        .from('events-images')
+        .getPublicUrl(filePath);
+      
+      uploadedUrls.push(urlData.publicUrl);
+      
+      // Update progress
+      setGalleryUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
+    }
+    
+    return uploadedUrls;
+  };
+
+  // Delete files from storage
+  const deleteStorageFiles = async (filePaths: string[]): Promise<void> => {
+    if (filePaths.length === 0) return;
+    
+    const { error } = await supabase.storage
+      .from('events-images')
+      .remove(filePaths);
+      
+    if (error) {
+      console.error('Failed to delete storage files:', error);
+    }
+  };
+
+  // Handle gallery file selection
+  const handleGalleryFileSelect = (files: FileList | null) => {
+    if (!files || files.length === 0) return;
+
+    const fileArray = Array.from(files);
+    const validFiles: File[] = [];
+    const newPreviews: string[] = [];
+
+    for (const file of fileArray) {
+      const validationError = validateFile(file);
+      if (validationError) {
+        setError(validationError);
+        return;
+      }
+      validFiles.push(file);
+      newPreviews.push(URL.createObjectURL(file));
+    }
+
+    setGalleryFiles(prev => [...prev, ...validFiles]);
+    setGalleryPreviews(prev => [...prev, ...newPreviews]);
+    setError("");
+  };
+
+  // Handle gallery file input change
+  const handleGalleryFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    handleGalleryFileSelect(e.target.files);
+  };
+
+  // Remove gallery file from pending uploads
+  const handleRemoveGalleryFile = (index: number) => {
+    URL.revokeObjectURL(galleryPreviews[index]);
+    setGalleryFiles(prev => prev.filter((_, i) => i !== index));
+    setGalleryPreviews(prev => prev.filter((_, i) => i !== index));
+  };
+
+  // Remove existing gallery image
+  const handleRemoveExistingGalleryImage = (imageUrl: string) => {
+    const filePath = extractFilePathFromUrl(imageUrl);
+    setDeletedGalleryImages(prev => [...prev, filePath]);
+    setExistingGalleryImages(prev => prev.filter(url => url !== imageUrl));
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -356,33 +510,84 @@ export default function EventsPage() {
 
     try {
       let imageUrl = formData.image_url.trim();
+      let eventId = selectedEvent?.id;
 
-      // If a file is selected, upload it first
-      if (selectedFile) {
-        imageUrl = await uploadFileToStorage(selectedFile);
+      // Step 1: Create or update event first to get ID
+      if (selectedEvent) {
+        // Updating existing event - we already have the ID
+        eventId = selectedEvent.id;
+      } else {
+        // Creating new event - insert basic data first to get ID
+        const { data, error } = await supabase
+          .from("events")
+          .insert({
+            title: formData.title.trim(),
+            description: formData.description.trim() || null,
+            event_date: format(formData.event_date, "yyyy-MM-dd"),
+            image_url: null,
+            extra_images: null,
+            is_upcoming: formData.is_upcoming,
+          })
+          .select()
+          .single();
+
+        if (error) throw error;
+        eventId = data.id;
       }
 
+      // Step 2: Upload default image (if new file selected)
+      if (selectedFile) {
+        const fileExt = selectedFile.name.split(".").pop();
+        const fileName = `default-${Date.now()}.${fileExt}`;
+        const filePath = `${eventId}/${fileName}`;
+
+        const { data, error } = await supabase.storage
+          .from("events-images")
+          .upload(filePath, selectedFile, {
+            cacheControl: "3600",
+            upsert: false,
+          });
+
+        if (error) throw error;
+
+        const { data: urlData } = supabase.storage
+          .from("events-images")
+          .getPublicUrl(filePath);
+
+        imageUrl = urlData.publicUrl;
+      }
+
+      // Step 3: Upload gallery files
+      let galleryUrls: string[] = [...existingGalleryImages];
+      // Only upload gallery files if not upcoming or if manual upload happening
+      if (galleryFiles.length > 0) {
+        if (!eventId) throw new Error("Event ID is required for gallery upload");
+        setGalleryUploadProgress(0);
+        const newGalleryUrls = await uploadGalleryFiles(galleryFiles, eventId);
+        galleryUrls = [...galleryUrls, ...newGalleryUrls];
+      }
+
+      // Step 4: Delete removed gallery images from storage
+      if (deletedGalleryImages.length > 0) {
+        await deleteStorageFiles(deletedGalleryImages);
+      }
+
+      // Step 5: Update event with final data
       const eventData = {
         title: formData.title.trim(),
         description: formData.description.trim() || null,
         event_date: format(formData.event_date, "yyyy-MM-dd"),
         image_url: imageUrl || null,
+        extra_images: galleryUrls.length > 0 ? galleryUrls : null,
+        is_upcoming: formData.is_upcoming,
       };
 
-      if (selectedEvent) {
-        // Update
-        const { error } = await supabase
-          .from("events")
-          .update(eventData)
-          .eq("id", selectedEvent.id);
+      const { error } = await supabase
+        .from("events")
+        .update(eventData)
+        .eq("id", eventId);
 
-        if (error) throw error;
-      } else {
-        // Create
-        const { error } = await supabase.from("events").insert(eventData);
-
-        if (error) throw error;
-      }
+      if (error) throw error;
 
       await fetchEvents();
       setIsModalOpen(false);
@@ -391,15 +596,21 @@ export default function EventsPage() {
         description: "",
         event_date: new Date(),
         image_url: "",
+        is_upcoming: true,
       });
       setSelectedEvent(null);
       clearFileSelection();
+      setGalleryFiles([]);
+      setGalleryPreviews([]);
+      setExistingGalleryImages([]);
+      setDeletedGalleryImages([]);
     } catch (err: any) {
       console.error("Error saving event:", err);
       setError(err.message || err.code || "Failed to save event");
     } finally {
       setSubmitting(false);
       setUploadProgress(0);
+      setGalleryUploadProgress(0);
     }
   };
 
@@ -496,10 +707,16 @@ export default function EventsPage() {
                         Event Date
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Status
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Description
                       </th>
                       <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Image
+                      </th>
+                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                        Gallery
                       </th>
                       <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
                         Actions
@@ -518,16 +735,171 @@ export default function EventsPage() {
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                           {format(new Date(event.event_date), "MMM dd, yyyy")}
                         </td>
+                        <td className="px-6 py-4 whitespace-nowrap text-sm">
+                          {event.is_upcoming ? (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
+                              ✨ Upcoming
+                            </span>
+                          ) : (
+                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
+                              ✅ Completed
+                            </span>
+                          )}
+                        </td>
                         <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
                           {event.description || "-"}
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                           <button
-                            onClick={() => handleViewImage(event.image_url)}
+                            onClick={() => {
+                              const images = [];
+                              if (event.image_url) images.push(event.image_url);
+                              if (event.extra_images) images.push(...event.extra_images);
+                              handleViewImage(images);
+                            }}
                             className="text-primary hover:underline"
                           >
                             View
                           </button>
+                        </td>
+                        
+                        // ... (skip down to image viewer modal)
+
+          {/* Image Viewer Modal */}
+          {isImageViewerOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
+              style={{ touchAction: "none" }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  handleCloseImageViewer();
+                }
+              }}
+            >
+              <div className="relative max-w-4xl max-h-full w-full">
+                {/* Controls - Top Left Corner */}
+                <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+                  {/* Go Back Button */}
+                  <button
+                    onClick={handleCloseImageViewer}
+                    className="text-white hover:text-gray-300 bg-black/50 rounded-full p-2 transition-colors"
+                    title="Go Back"
+                  >
+                    <ArrowLeft className="h-6 w-6" />
+                  </button>
+
+                  {/* Zoom Controls */}
+                  {!imageLoadError && viewingImages.length > 0 && (
+                    <>
+                      <button
+                        onClick={handleZoomIn}
+                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={handleZoomOut}
+                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="h-5 w-5" />
+                      </button>
+                      {zoom !== 1 && (
+                        <>
+                          <button
+                            onClick={handleResetZoom}
+                            className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                            title="Reset Zoom"
+                          >
+                            <RotateCcw className="h-5 w-5" />
+                          </button>
+                          {/* Zoom Indicator */}
+                          <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
+                            {Math.round(zoom * 100)}%
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Navigation Controls */}
+                {!imageLoadError && viewingImages.length > 1 && (
+                  <>
+                    <button
+                      onClick={handlePrevImage}
+                      className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      title="Previous Image"
+                    >
+                      <ChevronLeft className="h-8 w-8" />
+                    </button>
+                    <button
+                      onClick={handleNextImage}
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      title="Next Image"
+                    >
+                      <ChevronRight className="h-8 w-8" />
+                    </button>
+                    {/* Image Counter */}
+                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
+                      {viewingIndex + 1} / {viewingImages.length}
+                    </div>
+                  </>
+                )}
+
+                {imageLoadError || viewingImages.length === 0 ? (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
+                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      Image Not Available
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Still didn't upload anything
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative w-full h-full">
+                    {/* Image Container */}
+                    <div
+                      className="w-full h-[90vh] overflow-hidden cursor-move flex items-center justify-center touch-none"
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                      onWheel={handleWheel}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
+                      style={{ touchAction: "none", userSelect: "none" }}
+                    >
+                      <img
+                        src={viewingImages[viewingIndex]}
+                        alt={`Event image ${viewingIndex + 1}`}
+                        className="rounded transition-transform duration-200"
+                        style={{
+                          maxWidth: "90vw",
+                          maxHeight: "85vh",
+                          width: "auto",
+                          height: "auto",
+                          transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+                          transformOrigin: "center center",
+                          cursor: zoom > 1 ? "move" : "default",
+                        }}
+                        onError={() => {
+                          setImageLoadError(true);
+                        }}
+                        draggable={false}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                          {event.extra_images?.length || 0} images
                         </td>
                         <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
                           <button
@@ -614,10 +986,39 @@ export default function EventsPage() {
                 />
               </div>
 
+              {/* Event Status Toggle */}
+              <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Event Status
+                  </label>
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    {formData.is_upcoming 
+                      ? "✨ Upcoming - Event hasn't happened yet (no gallery)" 
+                      : "✅ Completed - Event is done (gallery available)"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setFormData({ ...formData, is_upcoming: !formData.is_upcoming })}
+                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
+                    formData.is_upcoming
+                      ? 'bg-blue-500'
+                      : 'bg-green-500'
+                  }`}
+                >
+                  <span
+                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                      formData.is_upcoming ? 'translate-x-1' : 'translate-x-6'
+                    }`}
+                  />
+                </button>
+              </div>
+
               {/* File Upload Section */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Upload Image
+                  Default Image (Thumbnail)
                 </label>
                 <div
                   onDragOver={handleDragOver}
@@ -721,10 +1122,115 @@ export default function EventsPage() {
                     setFormData({ ...formData, image_url: e.target.value })
                   }
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="https://example.com/image.jpg"
+                  placeholder=""
                   disabled={!!selectedFile}
                 />
               </div>
+
+              {/* Gallery Images Section */}
+              {/* Gallery Images Section */}
+              {!formData.is_upcoming ? (
+                <div className="border-t border-gray-300 dark:border-gray-600 pt-4">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Gallery Images (Extra Photos)
+                  </label>
+                  
+                  {/* Multi-file upload button */}
+                  <div className="mb-4">
+                    <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-primary text-sm font-medium rounded-md text-primary bg-white dark:bg-gray-800 hover:bg-primary/10 dark:hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Upload Multiple Images
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        multiple
+                        onChange={handleGalleryFileInputChange}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+
+                  {/* Gallery Upload Progress */}
+                  {galleryUploadProgress > 0 && galleryUploadProgress < 100 && (
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between text-sm mb-1">
+                        <span className="text-gray-600 dark:text-gray-400">Uploading gallery images...</span>
+                        <span className="text-primary">{galleryUploadProgress}%</span>
+                      </div>
+                      <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
+                        <div
+                          className="bg-primary h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${galleryUploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Gallery preview grid */}
+                  {(existingGalleryImages.length > 0 || galleryPreviews.length > 0) ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
+                      {/* Existing gallery images from database */}
+                      {existingGalleryImages.map((imageUrl, index) => (
+                        <div key={`existing-${index}`} className="relative group">
+                          <img
+                            src={imageUrl}
+                            alt={`Gallery ${index + 1}`}
+                            className="w-full h-24 object-cover rounded-lg border border-gray-300 dark:border-gray-600"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveExistingGalleryImage(imageUrl)}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors shadow-lg"
+                            title="Remove"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
+                      
+                      {/* New gallery images pending upload */}
+                      {galleryPreviews.map((preview, index) => (
+                        <div key={`new-${index}`} className="relative group">
+                          <img
+                            src={preview}
+                            alt={`New ${index + 1}`}
+                            className="w-full h-24 object-cover rounded-lg border border-primary"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveGalleryFile(index)}
+                            className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600 transition-colors shadow-lg"
+                            title="Remove"
+                          >
+                            <X className="h-4 w-4" />
+                          </button>
+                          <div className="absolute bottom-1 left-1 bg-primary text-white text-xs px-2 py-0.5 rounded">
+                            New
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
+                      <ImageIcon className="mx-auto h-10 w-10 text-gray-400 mb-2" />
+                      <p className="text-sm text-gray-500 dark:text-gray-400">
+                        No gallery images added
+                      </p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="border-t border-gray-300 dark:border-gray-600 pt-4 opacity-75">
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                    Gallery Images
+                  </label>
+                  <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
+                    <p className="text-sm text-gray-500 dark:text-gray-400">
+                      Gallery images can be added when the event is marked as completed.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="flex justify-end space-x-3 pt-4">
                 <button
@@ -762,16 +1268,7 @@ export default function EventsPage() {
               style={{ touchAction: "none" }}
               onClick={(e) => {
                 if (e.target === e.currentTarget) {
-                  setIsImageViewerOpen(false);
-                  setViewingImage(null);
-                  setImageLoadError(false);
-                  setZoom(1);
-                  setPosition({ x: 0, y: 0 });
-                  // Restore page scroll and touch
-                  if (typeof window !== "undefined") {
-                    document.body.style.overflow = "";
-                    document.body.style.touchAction = "";
-                  }
+                  handleCloseImageViewer();
                 }
               }}
             >
@@ -780,13 +1277,7 @@ export default function EventsPage() {
                 <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
                   {/* Go Back Button */}
                   <button
-                    onClick={() => {
-                      setIsImageViewerOpen(false);
-                      setViewingImage(null);
-                      setImageLoadError(false);
-                      setZoom(1);
-                      setPosition({ x: 0, y: 0 });
-                    }}
+                    onClick={handleCloseImageViewer}
                     className="text-white hover:text-gray-300 bg-black/50 rounded-full p-2 transition-colors"
                     title="Go Back"
                   >
@@ -794,7 +1285,7 @@ export default function EventsPage() {
                   </button>
 
                   {/* Zoom Controls */}
-                  {!imageLoadError && viewingImage && (
+                  {!imageLoadError && viewingImages.length > 0 && (
                     <>
                       <button
                         onClick={handleZoomIn}
@@ -829,7 +1320,31 @@ export default function EventsPage() {
                   )}
                 </div>
 
-                {imageLoadError || !viewingImage ? (
+                {/* Navigation Controls */}
+                {!imageLoadError && viewingImages.length > 1 && (
+                  <>
+                    <button
+                      onClick={handlePrevImage}
+                      className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      title="Previous Image"
+                    >
+                      <ChevronLeft className="h-8 w-8" />
+                    </button>
+                    <button
+                      onClick={handleNextImage}
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      title="Next Image"
+                    >
+                      <ChevronRight className="h-8 w-8" />
+                    </button>
+                    {/* Image Counter */}
+                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
+                      {viewingIndex + 1} / {viewingImages.length}
+                    </div>
+                  </>
+                )}
+
+                {imageLoadError || viewingImages.length === 0 ? (
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
                     <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
@@ -856,8 +1371,8 @@ export default function EventsPage() {
                       style={{ touchAction: "none", userSelect: "none" }}
                     >
                       <img
-                        src={viewingImage}
-                        alt="Event image"
+                        src={viewingImages[viewingIndex]}
+                        alt={`Event image ${viewingIndex + 1}`}
                         className="rounded transition-transform duration-200"
                         style={{
                           maxWidth: "90vw",

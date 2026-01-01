@@ -1,11 +1,8 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  // Disable worker threads to avoid "Call retries were exceeded" on build
-  experimental: {
-    workerThreads: false,
-    cpus: 1
-  },
+
+  turbopack: {},
   webpack: (config, { isServer }) => {
     if (!isServer) {
       // Tell webpack to ignore Node.js modules that aren't available in browser

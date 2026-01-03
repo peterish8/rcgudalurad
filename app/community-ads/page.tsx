@@ -22,6 +22,24 @@ import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
 import Image from "next/image";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  arrayMove,
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+  useSortable,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+import { GripVertical } from "lucide-react";
 
 interface CommunityAd {
   id: string;
@@ -29,6 +47,7 @@ interface CommunityAd {
   image_url: string;
   link_url?: string;
   is_active: boolean;
+  duration_seconds: number;
   display_order: number;
   created_at: string;
 }
@@ -46,7 +65,8 @@ export default function CommunityAdsPage() {
     image_url: "",
     link_url: "",
     is_active: true,
-    display_order: 0,
+    duration_seconds: 10,
+    display_order: 1,
   });
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,14 +81,20 @@ export default function CommunityAdsPage() {
     fetchAds();
   }, []);
 
+  const sensors = useSensors(
+    useSensor(PointerSensor),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
+
   const fetchAds = async () => {
     try {
       setLoading(true);
-      // Simplified query - no multi-column ordering
       const { data, error } = await supabase
         .from("community_ads")
         .select("*")
-        .order("created_at", { ascending: false });
+        .order("display_order", { ascending: true });
 
       if (error) {
         console.error("Supabase error details:", error.message, error.details, error.hint);
@@ -82,6 +108,71 @@ export default function CommunityAdsPage() {
     }
   };
 
+  const handleDragEnd = async (event: DragEndEvent) => {
+    const { active, over } = event;
+
+    if (active.id !== over?.id) {
+      setAds((items) => {
+        const oldIndex = items.findIndex((item) => item.id === active.id);
+        const newIndex = items.findIndex((item) => item.id === over?.id);
+
+        const newItems = arrayMove(items, oldIndex, newIndex);
+
+        // Update display_order for all items based on new index
+        const updates = newItems.map((item, index) => ({
+            id: item.id,
+            display_order: index + 1,
+            // We only need update these two, but supabase upsert needs all non-nullable if we don't specify columns?
+            // Actually upsert updates existing rows if PK matches.
+            // Be careful to include other required fields if RLS/Database constraints are strict, 
+            // but for partial update we usually use .update() loop or upsert with minimal data if allowed.
+            // Safest for Supabase here is to likely iterate or use a specific RPC, but upsert with just ID and field works if no other constraints.
+            // Let's assume we need to pass at least what's changed.
+            title: item.title, // Pass minimal required just in case or existing data
+            image_url: item.image_url,
+            is_active: item.is_active,
+            duration_seconds: item.duration_seconds
+        }));
+        
+        // Optimistic UI update is already done by return newItems.
+        // We trigger the DB update asynchronously
+        updateDisplayOrders(updates);
+
+        return newItems.map((item, index) => ({
+             ...item, 
+             display_order: index + 1 
+        }));
+      });
+    }
+  };
+
+  const updateDisplayOrders = async (
+    items: { id: string; display_order: number; title: string, image_url: string, is_active: boolean, duration_seconds: number }[]
+  ) => {
+    try {
+      // Upsert is efficient for batch updates
+      const { error } = await supabase
+        .from("community_ads")
+        .upsert(
+            items.map(i => ({
+                id: i.id,
+                display_order: i.display_order,
+                title: i.title,
+                image_url: i.image_url,
+                is_active: i.is_active,
+                duration_seconds: i.duration_seconds,
+                updated_at: new Date().toISOString()
+            }))
+        );
+
+      if (error) throw error;
+    } catch (err) {
+      console.error("Error updating sort order:", err);
+      // Revert or show error? For now just log.
+      fetchAds(); // Re-fetch to sync state if error
+    }
+  };
+
   const handleEdit = (ad: CommunityAd) => {
     setSelectedAd(ad);
     setFormData({
@@ -89,7 +180,8 @@ export default function CommunityAdsPage() {
       image_url: ad.image_url,
       link_url: ad.link_url || "",
       is_active: ad.is_active,
-      display_order: ad.display_order,
+      duration_seconds: ad.duration_seconds || 10,
+      display_order: ad.display_order || 1,
     });
     setFilePreview(ad.image_url);
     setSelectedFile(null);
@@ -239,7 +331,8 @@ export default function CommunityAdsPage() {
         image_url: finalImageUrl,
         link_url: formData.link_url.trim() || null,
         is_active: formData.is_active,
-        display_order: parseInt(formData.display_order.toString()) || 0,
+        duration_seconds: parseInt(formData.duration_seconds.toString()) || 10,
+        display_order: parseInt(formData.display_order.toString()) || 1,
       };
 
       if (selectedAd) {
@@ -274,7 +367,8 @@ export default function CommunityAdsPage() {
       image_url: "",
       link_url: "",
       is_active: true,
-      display_order: 0,
+      duration_seconds: 10,
+      display_order: 1,
     });
     setSelectedAd(null);
     setSelectedFile(null);
@@ -369,9 +463,17 @@ export default function CommunityAdsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
+                  <DndContext
+                    sensors={sensors}
+                    collisionDetection={closestCenter}
+                    onDragEnd={handleDragEnd}
+                  >
               <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                 <thead className="bg-gray-50 dark:bg-gray-900/50">
                   <tr>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-10">
+                      {/* Drag Handle Column */}
+                    </th>
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Preview
                     </th>
@@ -381,7 +483,13 @@ export default function CommunityAdsPage() {
                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Link
                     </th>
-                     <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Duration
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                      Order
+                    </th>
+                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                       Status
                     </th>
                     <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
@@ -390,72 +498,31 @@ export default function CommunityAdsPage() {
                   </tr>
                 </thead>
                 <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                  {filteredAds.map((ad) => (
-                    <tr 
-                      key={ad.id} 
-                      className={`transition-colors ${
-                        ad.is_active 
-                          ? 'bg-green-50 dark:bg-green-900/10 border-l-4 border-green-500' 
-                          : 'hover:bg-gray-50 dark:hover:bg-gray-700/50'
-                      }`}
+                    <SortableContext
+                      items={filteredAds}
+                      strategy={verticalListSortingStrategy}
                     >
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="h-16 w-24 relative rounded overflow-hidden bg-gray-100 dark:bg-gray-700">
-                          <img
-                            src={ad.image_url}
-                            alt={ad.title}
-                            className="h-full w-full object-cover"
+                      {filteredAds.map((ad) => {
+                        // Calculate active order: Count how many *active* ads appear before this one in the current filtered list
+                        const activeIndex = filteredAds
+                          .slice(0, filteredAds.indexOf(ad))
+                          .filter(a => a.is_active).length + 1;
+
+                        return (
+                          <SortableAdRow
+                            key={ad.id}
+                            ad={ad}
+                            activeOrder={ad.is_active ? activeIndex : null}
+                            onEdit={handleEdit}
+                            onDelete={handleDelete}
+                            isSearching={searchTerm.length > 0}
                           />
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <div className="text-sm font-medium text-gray-900 dark:text-white">
-                          {ad.title}
-                        </div>
-                        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                          Created {format(new Date(ad.created_at), "MMM d, yyyy")}
-                        </div>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        {ad.link_url ? (
-                          <a href={ad.link_url} target="_blank" rel="noopener noreferrer" className="text-sm text-blue-500 hover:underline flex items-center">
-                            Open Link <ExternalLink className="h-3 w-3 ml-1" />
-                          </a>
-                        ) : (
-                          <span className="text-sm text-gray-400">No link</span>
-                        )}
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap">
-                        <span
-                          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                            ad.is_active
-                              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-                              : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                          }`}
-                        >
-                          {ad.is_active ? "Active" : "Inactive"}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                        <button
-                          onClick={() => handleEdit(ad)}
-                          className="text-primary hover:text-primary-dark mr-4 transition-colors"
-                          title="Edit"
-                        >
-                          <Edit className="h-5 w-5" />
-                        </button>
-                        <button
-                          onClick={() => handleDelete(ad.id)}
-                          className="text-red-600 hover:text-red-700 transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-5 w-5" />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
+                        );
+                      })}
+                    </SortableContext>
                 </tbody>
               </table>
+                  </DndContext>
             </div>
           )}
         </div>
@@ -591,27 +658,37 @@ export default function CommunityAdsPage() {
                 />
               </div>
 
-              {/* Display Order */}
+              {/* Display Duration */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Display Order
+                  Display Duration (seconds)
                 </label>
                 <input
                   type="number"
-                  value={formData.display_order}
-                  onChange={(e) => setFormData({ ...formData, display_order: parseInt(e.target.value) || 0 })}
+                  min={3}
+                  max={60}
+                  value={formData.duration_seconds}
+                  onChange={(e) => setFormData({ ...formData, duration_seconds: Math.min(60, Math.max(3, parseInt(e.target.value) || 10)) })}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="0"
+                  placeholder="10"
                 />
-                <p className="text-xs text-gray-400 mt-1">Lower numbers appear first in the carousel</p>
+                <p className="text-xs text-gray-400 mt-1">How long this ad shows (3-60s)</p>
               </div>
 
               {/* Is Active Toggle */}
               <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Include in Carousel
-                  </label>
+                  <div className="flex items-center gap-2 mb-1">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
+                      Include in Carousel
+                    </label>
+                     {/* Show Carousel Sequence if active */}
+                     {formData.is_active && selectedAd && (
+                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
+                             Sequence #{ads.filter(a => a.is_active && a.display_order <= formData.display_order).length}
+                         </span>
+                     )}
+                  </div>
                   <p className="text-sm text-gray-500 dark:text-gray-400">
                     {formData.is_active 
                       ? "✨ Active - Will rotate in the ad carousel (10s each)" 
@@ -735,5 +812,129 @@ function ImageIcon({ className }: { className?: string }) {
         d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
       />
     </svg>
+  );
+}
+
+function SortableAdRow({
+  ad,
+  activeOrder,
+  onEdit,
+  onDelete,
+  isSearching,
+}: {
+  ad: CommunityAd;
+  activeOrder: number | null;
+  onEdit: (ad: CommunityAd) => void;
+  onDelete: (id: string) => void;
+  isSearching: boolean;
+}) {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id: ad.id, disabled: isSearching });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    zIndex: isDragging ? 50 : "auto", 
+    position: "relative" as "relative",
+  };
+
+  return (
+    <tr
+      ref={setNodeRef}
+      style={style}
+      className={`transition-colors ${
+        ad.is_active
+          ? "bg-green-50 dark:bg-green-900/10"
+          : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
+      } ${isDragging ? "shadow-lg opacity-75 bg-blue-50 dark:bg-blue-900/20" : ""}`}
+    >
+      <td className="px-6 py-4 whitespace-nowrap w-10">
+        {!isSearching && (
+          <div {...attributes} {...listeners} className="cursor-grab hover:text-primary text-gray-400">
+            <GripVertical className="h-5 w-5" />
+          </div>
+        )}
+      </td>
+      <td className={`px-6 py-4 whitespace-nowrap ${ad.is_active ? 'border-l-4 border-green-500' : ''}`}>
+        <div className="h-16 w-24 relative rounded overflow-hidden bg-gray-100 dark:bg-gray-700">
+          <img
+            src={ad.image_url}
+            alt={ad.title}
+            className="h-full w-full object-cover"
+          />
+        </div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <div className="text-sm font-medium text-gray-900 dark:text-white">
+          {ad.title}
+        </div>
+        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+          Created {format(new Date(ad.created_at), "MMM d, yyyy")}
+        </div>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        {ad.link_url ? (
+          <a
+            href={ad.link_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-sm text-blue-500 hover:underline flex items-center"
+          >
+            Open Link <ExternalLink className="h-3 w-3 ml-1" />
+          </a>
+        ) : (
+          <span className="text-sm text-gray-400">No link</span>
+        )}
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-center">
+        <span className="text-sm font-medium text-gray-900 dark:text-white">
+          {ad.duration_seconds || 10}s
+        </span>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-center">
+        {activeOrder ? (
+          <span className="inline-flex items-center justify-center w-8 h-8 text-sm font-bold text-primary bg-primary/10 rounded-full">
+            {activeOrder}
+          </span>
+        ) : (
+           <span className="inline-flex items-center justify-center w-8 h-8 text-xs text-gray-400 bg-gray-100 dark:bg-gray-700/50 rounded-full" title="Inactive - Not in carousel">
+            -
+          </span>
+        )}
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap">
+        <span
+          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+            ad.is_active
+              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
+              : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
+          }`}
+        >
+          {ad.is_active ? "Active" : "Inactive"}
+        </span>
+      </td>
+      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+        <button
+          onClick={() => onEdit(ad)}
+          className="text-primary hover:text-primary-dark mr-4 transition-colors"
+          title="Edit"
+        >
+          <Edit className="h-5 w-5" />
+        </button>
+        <button
+          onClick={() => onDelete(ad.id)}
+          className="text-red-600 hover:text-red-700 transition-colors"
+          title="Delete"
+        >
+          <Trash2 className="h-5 w-5" />
+        </button>
+      </td>
+    </tr>
   );
 }

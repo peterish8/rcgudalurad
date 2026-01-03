@@ -763,9 +763,6 @@ export default function EventsPage() {
                           </button>
                         </td>
                         
-                        // ... (skip down to image viewer modal)
-
-          {/* Image Viewer Modal */}
 
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                           {event.extra_images?.length || 0} images

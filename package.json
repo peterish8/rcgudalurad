@@ -11,9 +11,11 @@
   "dependencies": {
     "@supabase/supabase-js": "^2.39.0",
     "@swc/helpers": "^0.5.2",
+    "@types/papaparse": "^5.5.2",
     "date-fns": "^3.0.6",
     "lucide-react": "^0.562.0",
     "next": "16.1.1",
+    "papaparse": "^5.5.3",
     "react": "19.2.3",
     "react-datepicker": "^9.1.0",
     "react-dom": "19.2.3",

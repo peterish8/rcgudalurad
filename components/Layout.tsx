@@ -16,6 +16,7 @@ import {
   X,
   ChevronLeft,
   ChevronRight,
+  Megaphone,
 } from "lucide-react";
 import { useState, useRef, useEffect } from "react";
 
@@ -41,6 +42,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
     { name: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
     { name: "Events", href: "/events", icon: Calendar },
     { name: "Board Members", href: "/board-members", icon: Users },
+    { name: "Community Ads", href: "/community-ads", icon: Megaphone },
     { name: "Contact Submissions", href: "/contact-submissions", icon: MessageSquare },
   ];
 

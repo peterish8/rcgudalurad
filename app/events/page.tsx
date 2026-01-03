@@ -766,138 +766,7 @@ export default function EventsPage() {
                         // ... (skip down to image viewer modal)
 
           {/* Image Viewer Modal */}
-          {isImageViewerOpen && (
-            <div
-              className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
-              style={{ touchAction: "none" }}
-              onClick={(e) => {
-                if (e.target === e.currentTarget) {
-                  handleCloseImageViewer();
-                }
-              }}
-            >
-              <div className="relative max-w-4xl max-h-full w-full">
-                {/* Controls - Top Left Corner */}
-                <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
-                  {/* Go Back Button */}
-                  <button
-                    onClick={handleCloseImageViewer}
-                    className="text-white hover:text-gray-300 bg-black/50 rounded-full p-2 transition-colors"
-                    title="Go Back"
-                  >
-                    <ArrowLeft className="h-6 w-6" />
-                  </button>
 
-                  {/* Zoom Controls */}
-                  {!imageLoadError && viewingImages.length > 0 && (
-                    <>
-                      <button
-                        onClick={handleZoomIn}
-                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="h-5 w-5" />
-                      </button>
-                      <button
-                        onClick={handleZoomOut}
-                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="h-5 w-5" />
-                      </button>
-                      {zoom !== 1 && (
-                        <>
-                          <button
-                            onClick={handleResetZoom}
-                            className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                            title="Reset Zoom"
-                          >
-                            <RotateCcw className="h-5 w-5" />
-                          </button>
-                          {/* Zoom Indicator */}
-                          <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
-                            {Math.round(zoom * 100)}%
-                          </div>
-                        </>
-                      )}
-                    </>
-                  )}
-                </div>
-
-                {/* Navigation Controls */}
-                {!imageLoadError && viewingImages.length > 1 && (
-                  <>
-                    <button
-                      onClick={handlePrevImage}
-                      className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                      title="Previous Image"
-                    >
-                      <ChevronLeft className="h-8 w-8" />
-                    </button>
-                    <button
-                      onClick={handleNextImage}
-                      className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                      title="Next Image"
-                    >
-                      <ChevronRight className="h-8 w-8" />
-                    </button>
-                    {/* Image Counter */}
-                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
-                      {viewingIndex + 1} / {viewingImages.length}
-                    </div>
-                  </>
-                )}
-
-                {imageLoadError || viewingImages.length === 0 ? (
-                  <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
-                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
-                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
-                      Image Not Available
-                    </h3>
-                    <p className="text-sm text-gray-600 dark:text-gray-400">
-                      Still didn't upload anything
-                    </p>
-                  </div>
-                ) : (
-                  <div className="relative w-full h-full">
-                    {/* Image Container */}
-                    <div
-                      className="w-full h-[90vh] overflow-hidden cursor-move flex items-center justify-center touch-none"
-                      onMouseDown={handleMouseDown}
-                      onMouseMove={handleMouseMove}
-                      onMouseUp={handleMouseUp}
-                      onMouseLeave={handleMouseUp}
-                      onWheel={handleWheel}
-                      onTouchStart={handleTouchStart}
-                      onTouchMove={handleTouchMove}
-                      onTouchEnd={handleTouchEnd}
-                      onTouchCancel={handleTouchEnd}
-                      style={{ touchAction: "none", userSelect: "none" }}
-                    >
-                      <img
-                        src={viewingImages[viewingIndex]}
-                        alt={`Event image ${viewingIndex + 1}`}
-                        className="rounded transition-transform duration-200"
-                        style={{
-                          maxWidth: "90vw",
-                          maxHeight: "85vh",
-                          width: "auto",
-                          height: "auto",
-                          transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
-                          transformOrigin: "center center",
-                          cursor: zoom > 1 ? "move" : "default",
-                        }}
-                        onError={() => {
-                          setImageLoadError(true);
-                        }}
-                        draggable={false}
-                      />
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
                         <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
                           {event.extra_images?.length || 0} images
                         </td>
@@ -1098,34 +967,7 @@ export default function EventsPage() {
                 )}
               </div>
 
-              {/* OR Divider */}
-              <div className="relative">
-                <div className="absolute inset-0 flex items-center">
-                  <div className="w-full border-t border-gray-300 dark:border-gray-600" />
-                </div>
-                <div className="relative flex justify-center text-sm">
-                  <span className="px-2 bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400">
-                    OR
-                  </span>
-                </div>
-              </div>
 
-              {/* URL Input (Fallback) */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Image URL (optional)
-                </label>
-                <input
-                  type="url"
-                  value={formData.image_url}
-                  onChange={(e) =>
-                    setFormData({ ...formData, image_url: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder=""
-                  disabled={!!selectedFile}
-                />
-              </div>
 
               {/* Gallery Images Section */}
               {/* Gallery Images Section */}
@@ -1409,6 +1251,140 @@ export default function EventsPage() {
             cancelText="Cancel"
             danger
           />
+
+          {/* Image Viewer Modal - Moved outside table loop */}
+          {isImageViewerOpen && (
+            <div
+              className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75 p-4"
+              style={{ touchAction: "none" }}
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  handleCloseImageViewer();
+                }
+              }}
+            >
+              <div className="relative max-w-4xl max-h-full w-full">
+                {/* Controls - Top Left Corner */}
+                <div className="absolute top-4 left-4 z-20 flex items-center gap-2">
+                  {/* Go Back Button */}
+                  <button
+                    onClick={handleCloseImageViewer}
+                    className="text-white hover:text-gray-300 bg-black/50 rounded-full p-2 transition-colors"
+                    title="Go Back"
+                  >
+                    <ArrowLeft className="h-6 w-6" />
+                  </button>
+
+                  {/* Zoom Controls */}
+                  {!imageLoadError && viewingImages.length > 0 && (
+                    <>
+                      <button
+                        onClick={handleZoomIn}
+                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                        title="Zoom In"
+                      >
+                        <ZoomIn className="h-5 w-5" />
+                      </button>
+                      <button
+                        onClick={handleZoomOut}
+                        className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                        title="Zoom Out"
+                      >
+                        <ZoomOut className="h-5 w-5" />
+                      </button>
+                      {zoom !== 1 && (
+                        <>
+                          <button
+                            onClick={handleResetZoom}
+                            className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
+                            title="Reset Zoom"
+                          >
+                            <RotateCcw className="h-5 w-5" />
+                          </button>
+                          {/* Zoom Indicator */}
+                          <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
+                            {Math.round(zoom * 100)}%
+                          </div>
+                        </>
+                      )}
+                    </>
+                  )}
+                </div>
+
+                {/* Navigation Controls */}
+                {!imageLoadError && viewingImages.length > 1 && (
+                  <>
+                    <button
+                      onClick={handlePrevImage}
+                      className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      title="Previous Image"
+                    >
+                      <ChevronLeft className="h-8 w-8" />
+                    </button>
+                    <button
+                      onClick={handleNextImage}
+                      className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
+                      title="Next Image"
+                    >
+                      <ChevronRight className="h-8 w-8" />
+                    </button>
+                    {/* Image Counter */}
+                    <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
+                      {viewingIndex + 1} / {viewingImages.length}
+                    </div>
+                  </>
+                )}
+
+                {imageLoadError || viewingImages.length === 0 ? (
+                  <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
+                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                    <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
+                      Image Not Available
+                    </h3>
+                    <p className="text-sm text-gray-600 dark:text-gray-400">
+                      Still didn't upload anything
+                    </p>
+                  </div>
+                ) : (
+                  <div className="relative w-full h-full">
+                    {/* Image Container */}
+                    <div
+                      className="w-full h-[90vh] overflow-hidden cursor-move flex items-center justify-center touch-none"
+                      onMouseDown={handleMouseDown}
+                      onMouseMove={handleMouseMove}
+                      onMouseUp={handleMouseUp}
+                      onMouseLeave={handleMouseUp}
+                      onWheel={handleWheel}
+                      onTouchStart={handleTouchStart}
+                      onTouchMove={handleTouchMove}
+                      onTouchEnd={handleTouchEnd}
+                      onTouchCancel={handleTouchEnd}
+                      style={{ touchAction: "none", userSelect: "none" }}
+                    >
+                      <img
+                        src={viewingImages[viewingIndex]}
+                        alt={`Event image ${viewingIndex + 1}`}
+                        className="rounded transition-transform duration-200"
+                        style={{
+                          maxWidth: "90vw",
+                          maxHeight: "85vh",
+                          width: "auto",
+                          height: "auto",
+                          transform: `translate(${position.x}px, ${position.y}px) scale(${zoom})`,
+                          transformOrigin: "center center",
+                          cursor: zoom > 1 ? "move" : "default",
+                        }}
+                        onError={() => {
+                          setImageLoadError(true);
+                        }}
+                        draggable={false}
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       </Layout>
     </ProtectedRoute>

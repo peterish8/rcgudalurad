@@ -4,7 +4,8 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Plus, Edit, Trash2, Search, Loader2, Users, ChevronDown, ArrowUp, ArrowDown } from "lucide-react";
+import { Plus, Edit, Trash2, Search, Loader2, Users, ChevronDown, ArrowUp, ArrowDown, Upload, Download, FileText } from "lucide-react";
+import Papa from "papaparse";
 import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
 import { format } from "date-fns";
@@ -39,6 +40,11 @@ export default function BoardMembersPage() {
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
   const [dropdownPosition, setDropdownPosition] = useState<Record<string, "up" | "down">>({});
+  const [isImporting, setIsImporting] = useState(false);
+  const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
+  const [pasteContent, setPasteContent] = useState("");
+  const [isFormSectionDropdownOpen, setIsFormSectionDropdownOpen] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchMembers();
@@ -265,6 +271,96 @@ export default function BoardMembersPage() {
     }
   };
 
+  const processCSVData = async (results: Papa.ParseResult<any>) => {
+    try {
+      const rows = results.data as any[];
+      
+      if (rows.length === 0) {
+        throw new Error("CSV data is empty");
+      }
+
+      // Validate headers
+      const firstRow = rows[0];
+      if (!firstRow.name || !firstRow.designation) {
+        throw new Error("Missing required columns: name, designation");
+      }
+
+      const newMembers = rows.map((row) => ({
+        name: row.name?.trim(),
+        designation: row.designation?.trim(),
+        section: row.section?.trim() || getDefaultSection(row.designation?.trim() || ""),
+      })).filter(m => m.name && m.designation);
+
+      if (newMembers.length === 0) {
+          throw new Error("No valid members found in CSV");
+      }
+
+      const { error } = await supabase
+        .from("board_members")
+        .insert(newMembers);
+
+      if (error) throw error;
+
+      await fetchMembers();
+      alert(`Successfully imported ${newMembers.length} members`);
+      setIsPasteModalOpen(false);
+      setPasteContent("");
+      
+    } catch (err: any) {
+      console.error("Error importing CSV:", err);
+      setFetchError(err.message || "Failed to import CSV");
+    } finally {
+      setIsImporting(false);
+      // Reset input
+      if (fileInputRef.current) {
+        fileInputRef.current.value = "";
+      }
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    setIsImporting(true);
+    setFetchError(null);
+
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: processCSVData,
+      error: (error) => {
+        console.error("CSV Parse Error:", error);
+        setFetchError("Failed to parse CSV file");
+        setIsImporting(false);
+        if (fileInputRef.current) {
+            fileInputRef.current.value = "";
+        }
+      }
+    });
+  };
+
+  const handlePasteImport = () => {
+    if (!pasteContent.trim()) {
+      setFetchError("Please paste CSV content");
+      return;
+    }
+
+    setIsImporting(true);
+    setFetchError(null);
+
+    Papa.parse(pasteContent, {
+      header: true,
+      skipEmptyLines: true,
+      complete: processCSVData,
+      error: (error: Error) => {
+        console.error("CSV Parse Error:", error);
+        setFetchError("Failed to parse CSV text");
+        setIsImporting(false);
+      }
+    });
+  };
+
   const handleSort = (column: string) => {
     if (sortColumn === column) {
       // Toggle direction if clicking the same column
@@ -345,13 +441,54 @@ export default function BoardMembersPage() {
                 Create, edit, and delete board members
               </p>
             </div>
-            <button
-              onClick={handleCreate}
-              className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Add New Member
-            </button>
+            <div className="flex gap-2 mt-4 sm:mt-0">
+              <input
+                type="file"
+                ref={fileInputRef}
+                onChange={handleFileUpload}
+                accept=".csv"
+                className="hidden"
+              />
+              <a
+                href="/board-members-template.csv"
+                download
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              >
+                <Download className="h-5 w-5 mr-2" />
+                Template
+              </a>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isImporting}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              >
+                {isImporting ? (
+                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
+                ) : (
+                  <Upload className="h-5 w-5 mr-2" />
+                )}
+                Import CSV
+              </button>
+              <button
+                onClick={() => {
+                  setFetchError(null);
+                  setPasteContent("");
+                  setIsPasteModalOpen(true);
+                }}
+                disabled={isImporting}
+                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              >
+                <FileText className="h-5 w-5 mr-2" />
+                Paste Text
+              </button>
+              <button
+                onClick={handleCreate}
+                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
+              >
+                <Plus className="h-5 w-5 mr-2" />
+                Add New Member
+              </button>
+            </div>
           </div>
 
           <div className="flex flex-col sm:flex-row gap-4">
@@ -815,20 +952,82 @@ export default function BoardMembersPage() {
                     </span>
                   )}
                 </label>
-                <select
-                  required
-                  value={formData.section}
-                  onChange={(e) =>
-                    setFormData({ ...formData, section: e.target.value })
-                  }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                >
-                  <option value="fixed">Fixed Section (Top 3 - Non-scrolling)</option>
-                  <option value="layer1">Scrolling Layer 1 (First scrolling row)</option>
-                  <option value="layer2">Scrolling Layer 2 (Second scrolling row)</option>
-                  <option value="layer3">Scrolling Layer 3 (Third scrolling row)</option>
-                  <option value="scrolling">Auto-assign (Legacy - will be distributed)</option>
-                </select>
+                <div className="relative">
+                  <button
+                    type="button"
+                    onClick={() => setIsFormSectionDropdownOpen(!isFormSectionDropdownOpen)}
+                    className="w-full text-left px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-between"
+                  >
+                    <span className="flex items-center gap-2">
+                       {formData.section === "fixed" ? (
+                        <>
+                          <div className="w-2 h-2 rounded-full bg-blue-500" />
+                          <span>Fixed Section (Top 3)</span>
+                        </>
+                      ) : formData.section === "layer1" ? (
+                        <>
+                          <div className="w-2 h-2 rounded-full bg-green-500" />
+                          <span>Scrolling Layer 1</span>
+                        </>
+                      ) : formData.section === "layer2" ? (
+                         <>
+                          <div className="w-2 h-2 rounded-full bg-purple-500" />
+                          <span>Scrolling Layer 2</span>
+                        </>
+                      ) : formData.section === "layer3" ? (
+                         <>
+                          <div className="w-2 h-2 rounded-full bg-orange-500" />
+                          <span>Scrolling Layer 3</span>
+                        </>
+                      ) : (
+                         <>
+                          <div className="w-2 h-2 rounded-full bg-gray-400" />
+                          <span>Auto-assign (Legacy)</span>
+                        </>
+                      )}
+                    </span>
+                    <ChevronDown className={`h-4 w-4 transition-transform ${isFormSectionDropdownOpen ? "rotate-180" : ""}`} />
+                  </button>
+
+                  {isFormSectionDropdownOpen && (
+                    <div className="absolute z-[100] w-full mt-1 bg-white dark:bg-gray-800 rounded-md shadow-2xl border border-gray-200 dark:border-gray-700 py-1 max-h-60 overflow-y-auto focus:outline-none animate-in fade-in zoom-in-95 duration-100 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
+                       {[
+                        { value: "fixed", label: "Fixed Section (Top 3)", color: "bg-blue-500", desc: "Always visible at top" },
+                        { value: "layer1", label: "Scrolling Layer 1", color: "bg-green-500", desc: "First scrolling row" },
+                        { value: "layer2", label: "Scrolling Layer 2", color: "bg-purple-500", desc: "Second scrolling row" },
+                        { value: "layer3", label: "Scrolling Layer 3", color: "bg-orange-500", desc: "Third scrolling row" },
+                        { value: "scrolling", label: "Auto-assign", color: "bg-gray-400", desc: "Legacy distribution" },
+                      ].map((option) => (
+                        <button
+                          key={option.value}
+                          type="button"
+                          onClick={() => {
+                            setFormData({ ...formData, section: option.value });
+                            setIsFormSectionDropdownOpen(false);
+                          }}
+                          className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between ${
+                            formData.section === option.value ? "bg-gray-50 dark:bg-gray-700/50" : ""
+                          }`}
+                        >
+                           <div className="flex flex-col">
+                             <div className="flex items-center gap-2">
+                               <div className={`w-2 h-2 rounded-full ${option.color}`} />
+                               <span className="text-sm font-medium text-gray-900 dark:text-white">
+                                 {option.label}
+                               </span>
+                             </div>
+                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-4">
+                               {option.desc}
+                             </span>
+                           </div>
+                           {formData.section === option.value && (
+                              <Users className="h-4 w-4 text-primary" />
+                           )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
                   Fixed section shows first 3 members at top. Each layer scrolls independently.
                   {getDefaultSection(formData.designation) === "fixed" && (
@@ -866,6 +1065,52 @@ export default function BoardMembersPage() {
                 </button>
               </div>
             </form>
+          </Modal>
+
+          <Modal
+            isOpen={isPasteModalOpen}
+            onClose={() => {
+              setIsPasteModalOpen(false);
+              setFetchError(null);
+            }}
+            title="Import from Text"
+          >
+            <div className="space-y-4">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
+                Paste your CSV content below. It must have headers: <code>name,designation,section</code>
+              </p>
+              
+              {fetchError && (
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded text-sm">
+                  <strong>Error:</strong> {fetchError}
+                </div>
+              )}
+
+              <textarea
+                value={pasteContent}
+                onChange={(e) => setPasteContent(e.target.value)}
+                rows={10}
+                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs whitespace-pre"
+                placeholder={`name,designation,section\nJohn Doe,President,fixed\nJane Smith,Member,scrolling`}
+              />
+
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => setIsPasteModalOpen(false)}
+                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handlePasteImport}
+                  disabled={isImporting || !pasteContent.trim()}
+                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
+                  Parse & Import
+                </button>
+              </div>
+            </div>
           </Modal>
 
           <ConfirmDialog

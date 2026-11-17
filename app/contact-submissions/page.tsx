@@ -3,7 +3,7 @@
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState, useMemo } from "react";
-import { supabase } from "@/lib/supabase";
+import { api, convex, errorMessage, getToken } from "@/lib/convex";
 import {
   MessageSquare,
   Search,
@@ -58,18 +58,13 @@ export default function ContactSubmissionsPage() {
   async function fetchSubmissions() {
     try {
       setFetchError(null);
-      const { data, error } = await supabase
-        .from("contact_submissions")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
+      const data = await convex.query(api.contact.list, { token: getToken() });
 
       setSubmissions(data || []);
     } catch (err: any) {
       console.error("Error fetching contact submissions:", err);
       setFetchError(
-        err.message || err.code || "Failed to fetch contact submissions from Supabase"
+        errorMessage(err, "Failed to fetch contact submissions")
       );
       setSubmissions([]);
     } finally {
@@ -110,12 +105,11 @@ export default function ContactSubmissionsPage() {
   const handleToggleReadStatus = async (submission: ContactSubmission) => {
     setActionLoading(submission.id);
     try {
-      const { error } = await supabase
-        .from("contact_submissions")
-        .update({ is_read: !submission.is_read })
-        .eq("id", submission.id);
-
-      if (error) throw error;
+      await convex.mutation(api.contact.setRead, {
+        token: getToken(),
+        id: submission.id,
+        is_read: !submission.is_read,
+      });
 
       setSubmissions((prev) =>
         prev.map((s) =>
@@ -157,23 +151,14 @@ export default function ContactSubmissionsPage() {
     setDeleteError(null);
 
     try {
-      const { error, count } = await supabase
-        .from("contact_submissions")
-        .delete()
-        .eq("id", deleteTarget)
-        .select();
-
-      if (error) {
-        console.error("Supabase delete error:", error);
-        throw error;
-      }
+      await convex.mutation(api.contact.remove, { token: getToken(), id: deleteTarget });
 
       // Refresh from database to ensure sync
       await fetchSubmissions();
       closeDeleteDialog();
     } catch (err: any) {
       console.error("Error deleting submission:", err);
-      setDeleteError(err.message || "Failed to delete submission. Check RLS policies.");
+      setDeleteError(errorMessage(err, "Failed to delete submission."));
     } finally {
       setIsDeleting(false);
     }
@@ -201,12 +186,7 @@ export default function ContactSubmissionsPage() {
 
     setActionLoading("bulk");
     try {
-      const { error } = await supabase
-        .from("contact_submissions")
-        .update({ is_read: true })
-        .in("id", unreadIds);
-
-      if (error) throw error;
+      await convex.mutation(api.contact.markAllRead, { token: getToken() });
 
       setSubmissions((prev) =>
         prev.map((s) => ({ ...s, is_read: true }))
@@ -388,7 +368,7 @@ export default function ContactSubmissionsPage() {
 
           {fetchError && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
-              <strong>Error fetching data from Supabase:</strong> {fetchError}
+              <strong>Error fetching data:</strong> {fetchError}
             </div>
           )}
 
@@ -404,7 +384,7 @@ export default function ContactSubmissionsPage() {
                 Unable to load submissions
               </h3>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Please check your Supabase connection and try again.
+                Please check your connection and try again.
               </p>
             </div>
           ) : filteredSubmissions.length === 0 ? (

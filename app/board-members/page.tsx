@@ -3,7 +3,7 @@
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState, useRef } from "react";
-import { supabase } from "@/lib/supabase";
+import { api, convex, errorMessage, getToken } from "@/lib/convex";
 import { Plus, Edit, Trash2, Search, Loader2, Users, ChevronDown, ArrowUp, ArrowDown, Upload, Download, FileText } from "lucide-react";
 import Papa from "papaparse";
 import { Modal } from "@/components/Modal";
@@ -91,17 +91,11 @@ export default function BoardMembersPage() {
   async function fetchMembers() {
     try {
       setFetchError(null);
-      const { data, error } = await supabase
-        .from("board_members")
-        .select("*")
-        .order("created_at", { ascending: false });
-
-      if (error) throw error;
-      
+      const data = await convex.query(api.boardMembers.listAll, { token: getToken() });
       setMembers(data || []);
     } catch (err: any) {
       console.error("Error fetching board members:", err);
-      setFetchError(err.message || err.code || "Failed to fetch board members from Supabase");
+      setFetchError(errorMessage(err, "Failed to fetch board members"));
       setMembers([]);
     } finally {
       setLoading(false);
@@ -165,18 +159,13 @@ export default function BoardMembersPage() {
         section: newSection,
       };
 
-      const { error } = await supabase
-        .from("board_members")
-        .update(memberData)
-        .eq("id", memberId);
-
-      if (error) throw error;
+      await convex.mutation(api.boardMembers.update, { token: getToken(), id: memberId, ...memberData });
 
       // Refresh the list to ensure consistency
       await fetchMembers();
     } catch (err: any) {
       console.error("Error updating section:", err);
-      setError(err.message || err.code || "Failed to update section");
+      setError(errorMessage(err, "Failed to update section"));
       // Refresh on error to revert optimistic update
       await fetchMembers();
     } finally {
@@ -188,18 +177,13 @@ export default function BoardMembersPage() {
     if (!deleteTarget) return;
 
     try {
-      const { error } = await supabase
-        .from("board_members")
-        .delete()
-        .eq("id", deleteTarget);
-
-      if (error) throw error;
+      await convex.mutation(api.boardMembers.remove, { token: getToken(), id: deleteTarget });
 
       await fetchMembers();
       setDeleteTarget(null);
     } catch (err: any) {
       console.error("Error deleting board member:", err);
-      setError(err.message || err.code || "Failed to delete board member");
+      setError(errorMessage(err, "Failed to delete board member"));
     }
   };
 
@@ -241,18 +225,9 @@ export default function BoardMembersPage() {
       };
 
       if (selectedMember) {
-        const { error } = await supabase
-          .from("board_members")
-          .update(memberData)
-          .eq("id", selectedMember.id);
-
-        if (error) throw error;
+        await convex.mutation(api.boardMembers.update, { token: getToken(), id: selectedMember.id, ...memberData });
       } else {
-        const { error } = await supabase
-          .from("board_members")
-          .insert(memberData);
-
-        if (error) throw error;
+        await convex.mutation(api.boardMembers.create, { token: getToken(), ...memberData });
       }
 
       await fetchMembers();
@@ -265,7 +240,7 @@ export default function BoardMembersPage() {
       setSelectedMember(null);
     } catch (err: any) {
       console.error("Error saving board member:", err);
-      setError(err.message || err.code || "Failed to save board member");
+      setError(errorMessage(err, "Failed to save board member"));
     } finally {
       setSubmitting(false);
     }
@@ -295,11 +270,7 @@ export default function BoardMembersPage() {
           throw new Error("No valid members found in CSV");
       }
 
-      const { error } = await supabase
-        .from("board_members")
-        .insert(newMembers);
-
-      if (error) throw error;
+      await convex.mutation(api.boardMembers.createMany, { token: getToken(), members: newMembers });
 
       await fetchMembers();
       alert(`Successfully imported ${newMembers.length} members`);
@@ -558,7 +529,7 @@ export default function BoardMembersPage() {
 
           {fetchError && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
-              <strong>Error fetching board members from Supabase:</strong> {fetchError}
+              <strong>Error fetching board members:</strong> {fetchError}
             </div>
           )}
 
@@ -573,7 +544,7 @@ export default function BoardMembersPage() {
                 Unable to load board members
               </h3>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Please check your Supabase connection and try again.
+                Please check your connection and try again.
               </p>
             </div>
           ) : filteredMembers.length === 0 ? (

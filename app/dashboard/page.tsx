@@ -3,7 +3,7 @@
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api, convex, errorMessage, getToken } from "@/lib/convex";
 import { 
   Calendar, 
   Megaphone, 
@@ -51,43 +51,18 @@ export default function DashboardPage() {
   useEffect(() => {
     async function fetchDashboardData() {
       try {
-        // 1. Fetch Counts
-        const [
-          eventsTotal, 
-          eventsUpcoming,
-          adsTotal, 
-          adsActive, 
-          membersTotal, 
-          messagesUnread
-        ] = await Promise.all([
-          supabase.from("events").select("id", { count: "exact", head: true }),
-          supabase.from("events").select("id", { count: "exact", head: true }).eq("is_upcoming", true),
-          supabase.from("community_ads").select("id", { count: "exact", head: true }),
-          supabase.from("community_ads").select("id", { count: "exact", head: true }).eq("is_active", true),
-          supabase.from("board_members").select("id", { count: "exact", head: true }),
-          supabase.from("contact_submissions").select("id", { count: "exact", head: true }).eq("is_read", false),
-        ]);
-
-        // 2. Fetch Recent Content
-        const { data: messages } = await supabase
-          .from("contact_submissions")
-          .select("*")
-          .order("created_at", { ascending: false })
-          .limit(5);
-
-        const { data: nextEvents } = await supabase
-          .from("events")
-          .select("*")
-          .eq("is_upcoming", true)
-          .order("event_date", { ascending: true })
-          .limit(3);
-
-        const { data: activeCommunityAds } = await supabase
-          .from("community_ads")
-          .select("*")
-          .eq("is_active", true)
-          .order("display_order", { ascending: true })
-          .limit(4);
+        // Counts and recent content in one round trip
+        const overview = await convex.query(api.dashboard.overview, { token: getToken() });
+        const { counts } = overview;
+        const eventsTotal = { count: counts.eventsTotal };
+        const eventsUpcoming = { count: counts.eventsUpcoming };
+        const adsTotal = { count: counts.adsTotal };
+        const adsActive = { count: counts.adsActive };
+        const membersTotal = { count: counts.membersTotal };
+        const messagesUnread = { count: counts.messagesUnread };
+        const messages = overview.recentMessages;
+        const nextEvents = overview.nextEvents;
+        const activeCommunityAds = overview.activeAds;
 
         setStats({
           events: { 
@@ -108,7 +83,7 @@ export default function DashboardPage() {
         setError(null);
       } catch (err: any) {
         console.error("Error fetching dashboard data:", err);
-        setError(err.message || "Failed to load dashboard data");
+        setError(errorMessage(err, "Failed to load dashboard data"));
       } finally {
         setLoading(false);
       }

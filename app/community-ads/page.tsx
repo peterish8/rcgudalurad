@@ -3,7 +3,7 @@
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState, useRef } from "react";
-import { supabase } from "@/lib/supabase";
+import { api, convex, deleteFilesByUrl, errorMessage, getToken, uploadFile } from "@/lib/convex";
 import {
   Plus,
   Edit,
@@ -91,15 +91,7 @@ export default function CommunityAdsPage() {
   const fetchAds = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from("community_ads")
-        .select("*")
-        .order("display_order", { ascending: true });
-
-      if (error) {
-        console.error("Supabase error details:", error.message, error.details, error.hint);
-        throw error;
-      }
+      const data = await convex.query(api.communityAds.listAll, { token: getToken() });
       setAds(data || []);
     } catch (err: any) {
       console.error("Error fetching ads:", err);
@@ -122,12 +114,6 @@ export default function CommunityAdsPage() {
         const updates = newItems.map((item, index) => ({
             id: item.id,
             display_order: index + 1,
-            // We only need update these two, but supabase upsert needs all non-nullable if we don't specify columns?
-            // Actually upsert updates existing rows if PK matches.
-            // Be careful to include other required fields if RLS/Database constraints are strict, 
-            // but for partial update we usually use .update() loop or upsert with minimal data if allowed.
-            // Safest for Supabase here is to likely iterate or use a specific RPC, but upsert with just ID and field works if no other constraints.
-            // Let's assume we need to pass at least what's changed.
             title: item.title, // Pass minimal required just in case or existing data
             image_url: item.image_url,
             is_active: item.is_active,
@@ -150,22 +136,10 @@ export default function CommunityAdsPage() {
     items: { id: string; display_order: number; title: string, image_url: string, is_active: boolean, duration_seconds: number }[]
   ) => {
     try {
-      // Upsert is efficient for batch updates
-      const { error } = await supabase
-        .from("community_ads")
-        .upsert(
-            items.map(i => ({
-                id: i.id,
-                display_order: i.display_order,
-                title: i.title,
-                image_url: i.image_url,
-                is_active: i.is_active,
-                duration_seconds: i.duration_seconds,
-                updated_at: new Date().toISOString()
-            }))
-        );
-
-      if (error) throw error;
+      await convex.mutation(api.communityAds.reorder, {
+        token: getToken(),
+        items: items.map((i) => ({ id: i.id, display_order: i.display_order })),
+      });
     } catch (err) {
       console.error("Error updating sort order:", err);
       // Revert or show error? For now just log.
@@ -201,27 +175,11 @@ export default function CommunityAdsPage() {
       // Get the image URL to delete from storage
       const adToDelete = ads.find(a => a.id === deleteTarget);
       
-      const { error } = await supabase
-        .from("community_ads")
-        .delete()
-        .eq("id", deleteTarget);
+      await convex.mutation(api.communityAds.remove, { token: getToken(), id: deleteTarget });
 
-      if (error) throw error;
-
-      // Try to delete image from storage if it exists
+      // Delete the stored image too (ignored if it isn't a Convex storage URL)
       if (adToDelete?.image_url) {
-        try {
-            const url = new URL(adToDelete.image_url);
-            // Extract path after bucket name if possible, or just the filename
-            // Assuming simplified structure: [bucket-name]/[filename]
-            const pathParts = url.pathname.split('/');
-            const fileName = pathParts[pathParts.length - 1];
-            if (fileName) {
-                await supabase.storage.from("community-ads").remove([fileName]);
-            }
-        } catch (e) {
-            console.warn("Could not parse image URL for deletion", e);
-        }
+        await deleteFilesByUrl([adToDelete.image_url]);
       }
 
       setAds(ads.filter((ad) => ad.id !== deleteTarget));
@@ -275,24 +233,7 @@ export default function CommunityAdsPage() {
   };
 
   const uploadImage = async (file: File): Promise<string> => {
-    const fileExt = file.name.split(".").pop();
-    const fileName = `${Math.random().toString(36).substring(2)}_${Date.now()}.${fileExt}`;
-    const filePath = `${fileName}`;
-
-    const { error: uploadError, data } = await supabase.storage
-      .from("community-ads")
-      .upload(filePath, file, {
-        cacheControl: "3600",
-        upsert: false,
-      });
-
-    if (uploadError) throw uploadError;
-
-    const { data: { publicUrl } } = supabase.storage
-      .from("community-ads")
-      .getPublicUrl(filePath);
-
-    return publicUrl;
+    return await uploadFile(file);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -336,16 +277,9 @@ export default function CommunityAdsPage() {
       };
 
       if (selectedAd) {
-        const { error } = await supabase
-          .from("community_ads")
-          .update(adData)
-          .eq("id", selectedAd.id);
-        if (error) throw error;
+        await convex.mutation(api.communityAds.update, { token: getToken(), id: selectedAd.id, ...adData });
       } else {
-        const { error } = await supabase
-          .from("community_ads")
-          .insert(adData);
-        if (error) throw error;
+        await convex.mutation(api.communityAds.create, { token: getToken(), ...adData });
       }
 
       await fetchAds();
@@ -353,8 +287,7 @@ export default function CommunityAdsPage() {
       resetForm();
     } catch (err: any) {
       console.error("Error saving ad (full):", err);
-      console.error("Error saving ad (JSON):", JSON.stringify(err, null, 2));
-      setError(err.message || "Failed to save ad. Check console for details.");
+      setError(errorMessage(err, "Failed to save ad. Check console for details."));
     } finally {
       setSubmitting(false);
       setUploadProgress(0);

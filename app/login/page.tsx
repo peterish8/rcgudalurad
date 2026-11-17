@@ -2,7 +2,6 @@
 
 import { useState, FormEvent, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
-import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/contexts/AuthContext'
 import { LogIn, Loader2 } from 'lucide-react'
 
@@ -12,7 +11,7 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const router = useRouter()
-  const { user, loading: authLoading } = useAuth()
+  const { user, loading: authLoading, signIn } = useAuth()
 
   // Redirect if already logged in
   useEffect(() => {
@@ -35,17 +34,8 @@ export default function LoginPage() {
     setLoading(true)
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
-      if (error) throw error
-
-      if (data.user) {
-        router.push('/dashboard')
-        router.refresh()
-      }
+      await signIn(email, password)
+      router.push('/dashboard')
     } catch (err: any) {
       setError(err.message || 'Failed to login. Please check your credentials.')
     } finally {

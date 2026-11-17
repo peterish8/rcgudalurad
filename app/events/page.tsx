@@ -3,7 +3,7 @@
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { api, convex, deleteFilesByUrl, errorMessage, getToken, uploadFile } from "@/lib/convex";
 import {
   Plus,
   Edit,
@@ -90,19 +90,14 @@ export default function EventsPage() {
   async function fetchEvents() {
     try {
       setFetchError(null);
-      const { data, error } = await supabase
-        .from("events")
-        .select("*")
-        .order("event_date", { ascending: false });
-
-      if (error) throw error;
+      const data = await convex.query(api.events.listAll, { token: getToken() });
 
       // Only set events if data exists, otherwise empty array
       setEvents(data || []);
     } catch (err: any) {
       console.error("Error fetching events:", err);
       setFetchError(
-        err.message || err.code || "Failed to fetch events from Supabase"
+        errorMessage(err, "Failed to fetch events")
       );
       setEvents([]);
     } finally {
@@ -288,12 +283,7 @@ export default function EventsPage() {
     if (!deleteTarget) return;
 
     try {
-      const { error } = await supabase
-        .from("events")
-        .delete()
-        .eq("id", deleteTarget);
-
-      if (error) throw error;
+      await convex.mutation(api.events.remove, { token: getToken(), id: deleteTarget });
 
       await fetchEvents();
       setDeleteTarget(null);
@@ -368,31 +358,10 @@ export default function EventsPage() {
     setUploadProgress(0);
 
     try {
-      // Generate unique filename
-      const fileExt = file.name.split(".").pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${fileExt}`;
-      
       setUploadProgress(30);
-
-      const { data, error } = await supabase.storage
-        .from("events-images")
-        .upload(fileName, file, {
-          cacheControl: "3600",
-          upsert: false,
-        });
-
-      if (error) throw error;
-
-      setUploadProgress(80);
-
-      // Get public URL
-      const { data: urlData } = supabase.storage
-        .from("events-images")
-        .getPublicUrl(data.path);
-
+      const publicUrl = await uploadFile(file);
       setUploadProgress(100);
-      
-      return urlData.publicUrl;
+      return publicUrl;
     } finally {
       setIsUploading(false);
     }
@@ -406,11 +375,8 @@ export default function EventsPage() {
     }
   };
 
-  // Extract storage path from public URL
-  const extractFilePathFromUrl = (publicUrl: string): string => {
-    const match = publicUrl.match(/events-images\/(.+)$/);
-    return match ? match[1] : '';
-  };
+  // Stored files are deleted by their public URL (see deleteFilesByUrl)
+  const extractFilePathFromUrl = (publicUrl: string): string => publicUrl;
 
   // Upload multiple gallery files
   const uploadGalleryFiles = async (files: File[], eventId: string): Promise<string[]> => {
@@ -419,27 +385,10 @@ export default function EventsPage() {
     
     for (let i = 0; i < totalFiles; i++) {
       const file = files[i];
-      const fileExt = file.name.split('.').pop();
-      const fileName = `${Date.now()}-${Math.random().toString(36).slice(2, 9)}.${fileExt}`;
-      const filePath = `${eventId}/${fileName}`;
-      
       // Update progress
       setGalleryUploadProgress(Math.round(((i + 0.5) / totalFiles) * 100));
-      
-      const { data, error } = await supabase.storage
-        .from('events-images')
-        .upload(filePath, file, {
-          cacheControl: '3600',
-          upsert: false,
-        });
-      
-      if (error) throw error;
-      
-      const { data: urlData } = supabase.storage
-        .from('events-images')
-        .getPublicUrl(filePath);
-      
-      uploadedUrls.push(urlData.publicUrl);
+
+      uploadedUrls.push(await uploadFile(file));
       
       // Update progress
       setGalleryUploadProgress(Math.round(((i + 1) / totalFiles) * 100));
@@ -452,13 +401,7 @@ export default function EventsPage() {
   const deleteStorageFiles = async (filePaths: string[]): Promise<void> => {
     if (filePaths.length === 0) return;
     
-    const { error } = await supabase.storage
-      .from('events-images')
-      .remove(filePaths);
-      
-    if (error) {
-      console.error('Failed to delete storage files:', error);
-    }
+    await deleteFilesByUrl(filePaths);
   };
 
   // Handle gallery file selection
@@ -518,43 +461,21 @@ export default function EventsPage() {
         eventId = selectedEvent.id;
       } else {
         // Creating new event - insert basic data first to get ID
-        const { data, error } = await supabase
-          .from("events")
-          .insert({
-            title: formData.title.trim(),
-            description: formData.description.trim() || null,
-            event_date: format(formData.event_date, "yyyy-MM-dd"),
-            image_url: null,
-            extra_images: null,
-            is_upcoming: formData.is_upcoming,
-          })
-          .select()
-          .single();
-
-        if (error) throw error;
+        const data = await convex.mutation(api.events.create, {
+          token: getToken(),
+          title: formData.title.trim(),
+          description: formData.description.trim() || null,
+          event_date: format(formData.event_date, "yyyy-MM-dd"),
+          image_url: null,
+          extra_images: null,
+          is_upcoming: formData.is_upcoming,
+        });
         eventId = data.id;
       }
 
       // Step 2: Upload default image (if new file selected)
       if (selectedFile) {
-        const fileExt = selectedFile.name.split(".").pop();
-        const fileName = `default-${Date.now()}.${fileExt}`;
-        const filePath = `${eventId}/${fileName}`;
-
-        const { data, error } = await supabase.storage
-          .from("events-images")
-          .upload(filePath, selectedFile, {
-            cacheControl: "3600",
-            upsert: false,
-          });
-
-        if (error) throw error;
-
-        const { data: urlData } = supabase.storage
-          .from("events-images")
-          .getPublicUrl(filePath);
-
-        imageUrl = urlData.publicUrl;
+        imageUrl = await uploadFile(selectedFile);
       }
 
       // Step 3: Upload gallery files
@@ -582,12 +503,7 @@ export default function EventsPage() {
         is_upcoming: formData.is_upcoming,
       };
 
-      const { error } = await supabase
-        .from("events")
-        .update(eventData)
-        .eq("id", eventId);
-
-      if (error) throw error;
+      await convex.mutation(api.events.update, { token: getToken(), id: eventId, ...eventData });
 
       await fetchEvents();
       setIsModalOpen(false);
@@ -665,7 +581,7 @@ export default function EventsPage() {
           {/* Fetch error message */}
           {fetchError && (
             <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
-              <strong>Error fetching events from Supabase:</strong> {fetchError}
+              <strong>Error fetching events:</strong> {fetchError}
             </div>
           )}
 
@@ -681,7 +597,7 @@ export default function EventsPage() {
                 Unable to load events
               </h3>
               <p className="mt-1 text-sm text-gray-500 dark:text-gray-400">
-                Please check your Supabase connection and try again.
+                Please check your connection and try again.
               </p>
             </div>
           ) : filteredEvents.length === 0 ? (

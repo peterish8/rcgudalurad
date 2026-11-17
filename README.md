@@ -1,10 +1,10 @@
 # 🛡️ RC Gudalur Admin Panel
 
-A modern, full-featured admin dashboard for managing the RC Gudalur community platform. Built with **Next.js 16**, **React 19**, **Supabase**, and **TailwindCSS**.
+A modern, full-featured admin dashboard for managing the RC Gudalur community platform. Built with **Next.js 16**, **React 19**, **Convex**, and **TailwindCSS**.
 
 ![Next.js](https://img.shields.io/badge/Next.js-16.1.1-black?logo=next.js)
 ![React](https://img.shields.io/badge/React-19.2.3-61DAFB?logo=react)
-![Supabase](https://img.shields.io/badge/Supabase-Backend-3FCF8E?logo=supabase)
+![Convex](https://img.shields.io/badge/Convex-Backend-EE342F)
 ![TailwindCSS](https://img.shields.io/badge/TailwindCSS-3.4-06B6D4?logo=tailwindcss)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript)
 
@@ -30,7 +30,7 @@ A modern, full-featured admin dashboard for managing the RC Gudalur community pl
 - **Drag-and-drop reordering** using dnd-kit
 - Configurable **display duration** per ad
 - Toggle ads active/inactive status
-- Image upload to Supabase Storage
+- Image upload to Convex file storage
 
 ### 👥 Board Members
 - Manage organization board members
@@ -57,7 +57,7 @@ A modern, full-featured admin dashboard for managing the RC Gudalur community pl
 
 - **Node.js** 18.0 or later
 - **pnpm** (recommended) or npm
-- **Supabase** account and project
+- Access to the shared **Convex** deployment (its functions live in the website repo, `peterish8/rc-gudalur`, under `convex/`)
 
 ### Installation
 
@@ -76,8 +76,7 @@ A modern, full-featured admin dashboard for managing the RC Gudalur community pl
    
    Create a `.env.local` file in the root directory:
    ```env
-   NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-   NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+   NEXT_PUBLIC_CONVEX_URL=https://<your-deployment>.convex.cloud   # same URL as the website
    ```
 
 4. **Run the development server**
@@ -93,7 +92,7 @@ A modern, full-featured admin dashboard for managing the RC Gudalur community pl
 
 ## 🗄️ Database Schema
 
-The application uses the following Supabase tables:
+The panel reads and writes these Convex tables (schema: `convex/schema.ts` in the website repo), so changes show up on the website immediately:
 
 | Table | Description |
 |-------|-------------|
@@ -124,7 +123,7 @@ rcgudalur-admin/
 ├── contexts/                # React context providers
 │   └── AuthContext.tsx      # Authentication state
 ├── lib/                     # Utilities and helpers
-│   └── supabase.ts          # Supabase client configuration
+│   └── convex.ts            # Convex client, session token, file upload helpers
 └── public/                  # Static assets
 ```
 
@@ -137,8 +136,8 @@ rcgudalur-admin/
 | **Framework** | Next.js 16 (App Router) |
 | **Frontend** | React 19, TypeScript |
 | **Styling** | TailwindCSS 3.4 |
-| **Backend/DB** | Supabase (PostgreSQL) |
-| **Auth** | Supabase Auth |
+| **Backend/DB** | Convex (shared with the website) |
+| **Auth** | Convex session token (ADMIN_EMAIL / ADMIN_PASSWORD env vars) |
 | **Icons** | Lucide React |
 | **Forms** | React Hook Form |
 | **Drag & Drop** | @dnd-kit |
@@ -160,7 +159,7 @@ rcgudalur-admin/
 
 ## 🔐 Authentication
 
-The admin panel uses **Supabase Auth** for secure authentication. Protected routes automatically redirect unauthenticated users to the login page.
+The admin panel signs in against the `ADMIN_EMAIL` / `ADMIN_PASSWORD` Convex environment variables (`npx convex env set ...` in the website repo) and keeps a 30-day session token. All admin reads and writes check that token on the server. Protected routes automatically redirect unauthenticated users to the login page.
 
 ---
 

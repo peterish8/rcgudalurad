@@ -19,16 +19,9 @@ export function ThemeProvider({ children }: { children: React.ReactNode }) {
     if (typeof window === 'undefined') return
     
     setMounted(true)
-    const savedTheme = localStorage.getItem('theme') as Theme
-    if (savedTheme) {
-      setTheme(savedTheme)
-      document.documentElement.classList.toggle('dark', savedTheme === 'dark')
-    } else {
-      const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-      const initialTheme = prefersDark ? 'dark' : 'light'
-      setTheme(initialTheme)
-      document.documentElement.classList.toggle('dark', initialTheme === 'dark')
-    }
+    // Light by default; dark only if chosen here. The class itself is set before paint in app/layout.tsx.
+    const saved = localStorage.getItem('theme') === 'dark' ? 'dark' : 'light'
+    setTheme(saved)
   }, [])
 
   const toggleTheme = () => {

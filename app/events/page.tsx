@@ -2,6 +2,8 @@
 
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
+import { PageHeader } from "@/components/PageHeader";
+import { useToast } from "@/components/Toast";
 import { useEffect, useState } from "react";
 import { api, convex, deleteFilesByUrl, errorMessage, getToken, uploadFile } from "@/lib/convex";
 import {
@@ -39,6 +41,7 @@ interface Event {
 }
 
 export default function EventsPage() {
+  const toast = useToast();
   const [events, setEvents] = useState<Event[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -287,6 +290,7 @@ export default function EventsPage() {
 
       await fetchEvents();
       setDeleteTarget(null);
+      toast.success("Event deleted.", { live: true });
     } catch (err: any) {
       console.error("Error deleting event:", err);
       setError(err.message || err.code || "Failed to delete event");
@@ -507,6 +511,7 @@ export default function EventsPage() {
 
       await fetchEvents();
       setIsModalOpen(false);
+      toast.success(selectedEvent ? "Event updated." : "Event added.", { live: true });
       setFormData({
         title: "",
         description: "",
@@ -538,49 +543,42 @@ export default function EventsPage() {
     <ProtectedRoute>
       <Layout>
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Manage Events
-              </h1>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                Create, edit, and delete events
-              </p>
-              <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                📁 Max file size: 6MB per image
-              </p>
-            </div>
-            <button
-              onClick={handleCreate}
-              className="mt-4 sm:mt-0 inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-            >
-              <Plus className="h-5 w-5 mr-2" />
-              Add New Event
-            </button>
-          </div>
+          <PageHeader
+            title="Events"
+            description="Add events before they happen. Afterwards, mark them completed and add photos."
+            showsOn="Homepage › Upcoming events, Event details and Gallery"
+            actions={
+              <button type="button" onClick={handleCreate} className="btn-primary">
+                <Plus className="h-5 w-5" aria-hidden />
+                Add event
+              </button>
+            }
+          />
 
           {/* Search */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+          <div className="relative max-w-md">
+            <label htmlFor="events-search" className="sr-only">Search events</label>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" aria-hidden />
             <input
-              type="text"
-              placeholder="Search events..."
+              id="events-search"
+              type="search"
+              placeholder="Search by title"
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary"
+              className="field pl-10"
             />
           </div>
 
           {/* Error message for form operations */}
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+            <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg">
               <strong>Error:</strong> {error}
             </div>
           )}
 
           {/* Fetch error message */}
           {fetchError && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+            <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg">
               <strong>Error fetching events:</strong> {fetchError}
             </div>
           )}
@@ -588,11 +586,11 @@ export default function EventsPage() {
           {/* Events table */}
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
             </div>
           ) : fetchError ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <CalendarIcon className="mx-auto h-12 w-12 text-red-400" />
+              <CalendarIcon className="mx-auto h-12 w-12 text-red-400" aria-hidden />
               <h3 className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">
                 Unable to load events
               </h3>
@@ -602,7 +600,7 @@ export default function EventsPage() {
             </div>
           ) : filteredEvents.length === 0 ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <CalendarIcon className="mx-auto h-12 w-12 text-gray-400" />
+              <CalendarIcon className="mx-auto h-12 w-12 text-gray-400" aria-hidden />
               <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
                 No events found
               </h3>
@@ -611,94 +609,81 @@ export default function EventsPage() {
               </p>
             </div>
           ) : (
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-200 dark:border-gray-700 overflow-hidden">
+            <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
               <div className="overflow-x-auto">
-                <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                  <thead className="bg-gray-50 dark:bg-gray-700">
+                <table className="min-w-full">
+                  <caption className="sr-only">Events, newest date first</caption>
+                  <thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Title
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Event Date
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Status
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Description
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Image
-                      </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Gallery
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Actions
+                      <th scope="col" className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Event</th>
+                      <th scope="col" className="hidden px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 sm:table-cell">Date</th>
+                      <th scope="col" className="hidden px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 sm:table-cell">Status</th>
+                      <th scope="col" className="hidden px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 md:table-cell">Photos</th>
+                      <th scope="col" className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300">
+                        <span className="sr-only">Actions</span>
                       </th>
                     </tr>
                   </thead>
-                  <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
-                    {filteredEvents.map((event) => (
-                      <tr
-                        key={event.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700"
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
-                          {event.title}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          {format(new Date(event.event_date), "MMM dd, yyyy")}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          {event.is_upcoming ? (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/20 dark:text-blue-400">
-                              ✨ Upcoming
-                            </span>
-                          ) : (
-                            <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400">
-                              ✅ Completed
-                            </span>
-                          )}
-                        </td>
-                        <td className="px-6 py-4 text-sm text-gray-500 dark:text-gray-400 max-w-xs truncate">
-                          {event.description || "-"}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          <button
-                            onClick={() => {
-                              const images = [];
-                              if (event.image_url) images.push(event.image_url);
-                              if (event.extra_images) images.push(...event.extra_images);
-                              handleViewImage(images);
-                            }}
-                            className="text-primary hover:underline"
-                          >
-                            View
-                          </button>
-                        </td>
-                        
-
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          {event.extra_images?.length || 0} images
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button
-                            onClick={() => handleEdit(event)}
-                            className="text-primary hover:text-primary-dark mr-4"
-                          >
-                            <Edit className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(event.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                  <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
+                    {filteredEvents.map((event) => {
+                      const photos = [
+                        ...(event.image_url ? [event.image_url] : []),
+                        ...(event.extra_images ?? []),
+                      ];
+                      return (
+                        <tr key={event.id}>
+                          <td className="max-w-[11rem] px-3 py-3 sm:max-w-xs sm:px-4">
+                            <p className="truncate text-base font-medium text-gray-900 dark:text-white">{event.title}</p>
+                            {event.description && (
+                              <p className="hidden truncate text-sm text-gray-600 dark:text-gray-400 lg:block">{event.description}</p>
+                            )}
+                            <p className="text-sm text-gray-600 dark:text-gray-400 sm:hidden">
+                              {format(new Date(event.event_date), "d MMM yyyy")} · {event.is_upcoming ? "Upcoming" : "Completed"}
+                            </p>
+                          </td>
+                          <td className="hidden whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300 sm:table-cell">
+                            {format(new Date(event.event_date), "d MMM yyyy")}
+                          </td>
+                          <td className="hidden whitespace-nowrap px-4 py-3 text-sm sm:table-cell">
+                            {event.is_upcoming ? (
+                              <span className="inline-flex items-center rounded-full bg-sky-100 px-2.5 py-0.5 font-medium text-sky-900 dark:bg-sky-900/40 dark:text-sky-200">
+                                Upcoming
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center rounded-full bg-gray-100 px-2.5 py-0.5 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-200">
+                                Completed
+                              </span>
+                            )}
+                          </td>
+                          <td className="hidden whitespace-nowrap px-4 py-3 text-sm md:table-cell">
+                            {photos.length > 0 ? (
+                              <button
+                                type="button"
+                                onClick={() => handleViewImage(photos)}
+                                className="font-medium text-primary underline-offset-2 hover:underline"
+                              >
+                                View {photos.length} {photos.length === 1 ? "photo" : "photos"}
+                                <span className="sr-only"> for {event.title}</span>
+                              </button>
+                            ) : (
+                              <span className="text-gray-600 dark:text-gray-400">None yet</span>
+                            )}
+                          </td>
+                          <td className="whitespace-nowrap px-2 py-3 text-right sm:px-4">
+                            <div className="flex justify-end gap-1">
+                              <button type="button" onClick={() => handleEdit(event)} className="btn-row-edit">
+                                <Edit className="h-4 w-4" aria-hidden />
+                                Edit<span className="sr-only"> {event.title}</span>
+                              </button>
+                              <button type="button" onClick={() => handleDelete(event.id)} className="btn-row-delete">
+                                <Trash2 className="h-4 w-4" aria-hidden />
+                                Delete<span className="sr-only"> {event.title}</span>
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -712,20 +697,21 @@ export default function EventsPage() {
               setIsModalOpen(false);
               setError("");
             }}
-            title={selectedEvent ? "Edit Event" : "Create New Event"}
+            title={selectedEvent ? "Edit event" : "Add event"}
+            size="lg"
           >
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded text-sm">
+                <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
                   <strong>Error:</strong> {error}
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="events-title" className="label">
                   Title <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id="events-title"
                   type="text"
                   required
                   maxLength={200}
@@ -738,10 +724,10 @@ export default function EventsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Event Date <span className="text-red-500">*</span>
+                <label htmlFor="events-event-date" className="label">
+                  Date <span className="text-red-500">*</span>
                 </label>
-                <DatePicker
+                <DatePicker id="events-event-date"
                   selected={formData.event_date}
                   onChange={(date: Date | null) => {
                     if (date) {
@@ -754,10 +740,10 @@ export default function EventsPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="events-description" className="label">
                   Description
                 </label>
-                <textarea
+                <textarea id="events-description"
                   rows={4}
                   maxLength={1000}
                   value={formData.description}
@@ -768,39 +754,41 @@ export default function EventsPage() {
                 />
               </div>
 
-              {/* Event Status Toggle */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-                <div className="flex-1">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                    Event Status
-                  </label>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {formData.is_upcoming 
-                      ? "✨ Upcoming - Event hasn't happened yet (no gallery)" 
-                      : "✅ Completed - Event is done (gallery available)"}
-                  </p>
+              <fieldset>
+                <legend className="label">Has this event happened yet?</legend>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {[
+                    { value: true, title: "Upcoming", hint: "Shows in the homepage's Upcoming events box." },
+                    { value: false, title: "Completed", hint: "Shows in Event details and Gallery. You can add photos." },
+                  ].map((opt) => (
+                    <label
+                      key={opt.title}
+                      className={`flex cursor-pointer gap-3 rounded-lg border p-3 transition-colors duration-150 ${
+                        formData.is_upcoming === opt.value
+                          ? "border-gray-900 bg-gray-50 dark:border-white dark:bg-gray-700/50"
+                          : "border-gray-300 hover:bg-gray-50 dark:border-gray-600 dark:hover:bg-gray-700/40"
+                      }`}
+                    >
+                      <input
+                        type="radio"
+                        name="event-status"
+                        checked={formData.is_upcoming === opt.value}
+                        onChange={() => setFormData({ ...formData, is_upcoming: opt.value })}
+                        className="mt-1 h-4 w-4 accent-[rgb(var(--primary))]"
+                      />
+                      <span>
+                        <span className="block text-base font-medium text-gray-900 dark:text-white">{opt.title}</span>
+                        <span className="block text-sm text-gray-600 dark:text-gray-400">{opt.hint}</span>
+                      </span>
+                    </label>
+                  ))}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setFormData({ ...formData, is_upcoming: !formData.is_upcoming })}
-                  className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 ${
-                    formData.is_upcoming
-                      ? 'bg-blue-500'
-                      : 'bg-green-500'
-                  }`}
-                >
-                  <span
-                    className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
-                      formData.is_upcoming ? 'translate-x-1' : 'translate-x-6'
-                    }`}
-                  />
-                </button>
-              </div>
+              </fieldset>
 
               {/* File Upload Section */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Default Image (Thumbnail)
+                <label className="label">
+                  Main photo
                 </label>
                 <div
                   onDragOver={handleDragOver}
@@ -839,9 +827,9 @@ export default function EventsPage() {
                     </div>
                   ) : (
                     <div className="space-y-2">
-                      <Upload className="mx-auto h-10 w-10 text-gray-400" />
+                      <Upload className="mx-auto h-10 w-10 text-gray-400" aria-hidden />
                       <div>
-                        <label className="cursor-pointer">
+                        <label className="cursor-pointer rounded focus-within:outline focus-within:outline-2 focus-within:outline-offset-2">
                           <span className="text-primary hover:text-primary-dark font-medium">
                             Click to upload
                           </span>
@@ -849,7 +837,7 @@ export default function EventsPage() {
                             type="file"
                             accept="image/jpeg,image/png,image/webp,image/gif"
                             onChange={handleFileInputChange}
-                            className="hidden"
+                            className="sr-only"
                           />
                         </label>
                         <span className="text-gray-500 dark:text-gray-400">
@@ -872,7 +860,7 @@ export default function EventsPage() {
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div
-                        className="bg-primary h-2 rounded-full transition-all duration-300"
+                        className="bg-primary h-2 rounded-full transition-[width] duration-300"
                         style={{ width: `${uploadProgress}%` }}
                       />
                     </div>
@@ -886,21 +874,21 @@ export default function EventsPage() {
               {/* Gallery Images Section */}
               {!formData.is_upcoming ? (
                 <div className="border-t border-gray-300 dark:border-gray-600 pt-4">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Gallery Images (Extra Photos)
+                  <label className="label">
+                    More photos for the gallery
                   </label>
                   
                   {/* Multi-file upload button */}
                   <div className="mb-4">
-                    <label className="cursor-pointer inline-flex items-center px-4 py-2 border border-primary text-sm font-medium rounded-md text-primary bg-white dark:bg-gray-800 hover:bg-primary/10 dark:hover:bg-primary/20 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary transition-colors">
-                      <Upload className="h-4 w-4 mr-2" />
-                      Upload Multiple Images
+                    <label className="btn-secondary cursor-pointer focus-within:outline focus-within:outline-2 focus-within:outline-offset-2">
+                      <Upload className="h-4 w-4 mr-2" aria-hidden />
+                      Choose photos
                       <input
                         type="file"
                         accept="image/jpeg,image/png,image/webp,image/gif"
                         multiple
                         onChange={handleGalleryFileInputChange}
-                        className="hidden"
+                        className="sr-only"
                       />
                     </label>
                   </div>
@@ -914,7 +902,7 @@ export default function EventsPage() {
                       </div>
                       <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                         <div
-                          className="bg-primary h-2 rounded-full transition-all duration-300"
+                          className="bg-primary h-2 rounded-full transition-[width] duration-300"
                           style={{ width: `${galleryUploadProgress}%` }}
                         />
                       </div>
@@ -959,7 +947,7 @@ export default function EventsPage() {
                           >
                             <X className="h-4 w-4" />
                           </button>
-                          <div className="absolute bottom-1 left-1 bg-primary text-white text-xs px-2 py-0.5 rounded">
+                          <div className="absolute bottom-1 left-1 bg-primary text-on-primary text-xs px-2 py-0.5 rounded">
                             New
                           </div>
                         </div>
@@ -967,7 +955,7 @@ export default function EventsPage() {
                     </div>
                   ) : (
                     <div className="text-center py-8 border border-dashed border-gray-300 dark:border-gray-600 rounded-lg">
-                      <ImageIcon className="mx-auto h-10 w-10 text-gray-400 mb-2" />
+                      <ImageIcon className="mx-auto h-10 w-10 text-gray-400 mb-2" aria-hidden />
                       <p className="text-sm text-gray-500 dark:text-gray-400">
                         No gallery images added
                       </p>
@@ -976,8 +964,8 @@ export default function EventsPage() {
                 </div>
               ) : (
                 <div className="border-t border-gray-300 dark:border-gray-600 pt-4 opacity-75">
-                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                    Gallery Images
+                  <label className="label">
+                    More photos for the gallery
                   </label>
                   <div className="text-center py-6 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
                     <p className="text-sm text-gray-500 dark:text-gray-400">
@@ -987,29 +975,29 @@ export default function EventsPage() {
                 </div>
               )}
 
-              <div className="flex justify-end space-x-3 pt-4">
+              <div className="flex flex-col-reverse gap-3 pt-4 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => {
                     setIsModalOpen(false);
                     setError("");
                   }}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                  className="btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="btn-primary"
                 >
                   {submitting ? (
                     <>
-                      <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
-                      Saving...
+                      <Loader2 className="h-4 w-4 inline animate-spin mr-2" aria-hidden />
+                      Saving…
                     </>
                   ) : (
-                    "Save"
+                    (selectedEvent ? "Save changes" : "Add event")
                   )}
                 </button>
               </div>
@@ -1034,9 +1022,9 @@ export default function EventsPage() {
                   <button
                     onClick={handleCloseImageViewer}
                     className="text-white hover:text-gray-300 bg-black/50 rounded-full p-2 transition-colors"
-                    title="Go Back"
+                    title="Go Back" aria-label="Go Back"
                   >
-                    <ArrowLeft className="h-6 w-6" />
+                    <ArrowLeft className="h-6 w-6" aria-hidden />
                   </button>
 
                   {/* Zoom Controls */}
@@ -1045,25 +1033,25 @@ export default function EventsPage() {
                       <button
                         onClick={handleZoomIn}
                         className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                        title="Zoom In"
+                        title="Zoom In" aria-label="Zoom In"
                       >
-                        <ZoomIn className="h-5 w-5" />
+                        <ZoomIn className="h-5 w-5" aria-hidden />
                       </button>
                       <button
                         onClick={handleZoomOut}
                         className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                        title="Zoom Out"
+                        title="Zoom Out" aria-label="Zoom Out"
                       >
-                        <ZoomOut className="h-5 w-5" />
+                        <ZoomOut className="h-5 w-5" aria-hidden />
                       </button>
                       {zoom !== 1 && (
                         <>
                           <button
                             onClick={handleResetZoom}
                             className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                            title="Reset Zoom"
+                            title="Reset Zoom" aria-label="Reset Zoom"
                           >
-                            <RotateCcw className="h-5 w-5" />
+                            <RotateCcw className="h-5 w-5" aria-hidden />
                           </button>
                           {/* Zoom Indicator */}
                           <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
@@ -1081,16 +1069,16 @@ export default function EventsPage() {
                     <button
                       onClick={handlePrevImage}
                       className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                      title="Previous Image"
+                      title="Previous Image" aria-label="Previous Image"
                     >
-                      <ChevronLeft className="h-8 w-8" />
+                      <ChevronLeft className="h-8 w-8" aria-hidden />
                     </button>
                     <button
                       onClick={handleNextImage}
                       className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                      title="Next Image"
+                      title="Next Image" aria-label="Next Image"
                     >
-                      <ChevronRight className="h-8 w-8" />
+                      <ChevronRight className="h-8 w-8" aria-hidden />
                     </button>
                     {/* Image Counter */}
                     <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
@@ -1101,7 +1089,7 @@ export default function EventsPage() {
 
                 {imageLoadError || viewingImages.length === 0 ? (
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
-                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" aria-hidden />
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                       Image Not Available
                     </h3>
@@ -1158,9 +1146,9 @@ export default function EventsPage() {
               setDeleteTarget(null);
             }}
             onConfirm={confirmDelete}
-            title="Delete Event"
-            message="Are you sure you want to delete this event? This action cannot be undone."
-            confirmText="Delete"
+            title="Delete this event?"
+            message="It will disappear from the website straight away. This can't be undone."
+            confirmText="Delete event"
             cancelText="Cancel"
             danger
           />
@@ -1183,9 +1171,9 @@ export default function EventsPage() {
                   <button
                     onClick={handleCloseImageViewer}
                     className="text-white hover:text-gray-300 bg-black/50 rounded-full p-2 transition-colors"
-                    title="Go Back"
+                    title="Go Back" aria-label="Go Back"
                   >
-                    <ArrowLeft className="h-6 w-6" />
+                    <ArrowLeft className="h-6 w-6" aria-hidden />
                   </button>
 
                   {/* Zoom Controls */}
@@ -1194,25 +1182,25 @@ export default function EventsPage() {
                       <button
                         onClick={handleZoomIn}
                         className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                        title="Zoom In"
+                        title="Zoom In" aria-label="Zoom In"
                       >
-                        <ZoomIn className="h-5 w-5" />
+                        <ZoomIn className="h-5 w-5" aria-hidden />
                       </button>
                       <button
                         onClick={handleZoomOut}
                         className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                        title="Zoom Out"
+                        title="Zoom Out" aria-label="Zoom Out"
                       >
-                        <ZoomOut className="h-5 w-5" />
+                        <ZoomOut className="h-5 w-5" aria-hidden />
                       </button>
                       {zoom !== 1 && (
                         <>
                           <button
                             onClick={handleResetZoom}
                             className="p-2 bg-black/50 text-white rounded-lg hover:bg-black/70 transition-colors"
-                            title="Reset Zoom"
+                            title="Reset Zoom" aria-label="Reset Zoom"
                           >
-                            <RotateCcw className="h-5 w-5" />
+                            <RotateCcw className="h-5 w-5" aria-hidden />
                           </button>
                           {/* Zoom Indicator */}
                           <div className="px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
@@ -1230,16 +1218,16 @@ export default function EventsPage() {
                     <button
                       onClick={handlePrevImage}
                       className="absolute left-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                      title="Previous Image"
+                      title="Previous Image" aria-label="Previous Image"
                     >
-                      <ChevronLeft className="h-8 w-8" />
+                      <ChevronLeft className="h-8 w-8" aria-hidden />
                     </button>
                     <button
                       onClick={handleNextImage}
                       className="absolute right-4 top-1/2 transform -translate-y-1/2 z-20 p-2 bg-black/50 text-white rounded-full hover:bg-black/70 transition-colors"
-                      title="Next Image"
+                      title="Next Image" aria-label="Next Image"
                     >
-                      <ChevronRight className="h-8 w-8" />
+                      <ChevronRight className="h-8 w-8" aria-hidden />
                     </button>
                     {/* Image Counter */}
                     <div className="absolute bottom-4 left-1/2 transform -translate-x-1/2 z-20 px-3 py-1 bg-black/50 text-white rounded-lg text-sm">
@@ -1250,7 +1238,7 @@ export default function EventsPage() {
 
                 {imageLoadError || viewingImages.length === 0 ? (
                   <div className="bg-white dark:bg-gray-800 rounded-lg p-12 text-center max-w-md mx-auto">
-                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" />
+                    <ImageIcon className="mx-auto h-16 w-16 text-gray-400 mb-4" aria-hidden />
                     <h3 className="text-lg font-semibold text-gray-900 dark:text-white mb-2">
                       Image Not Available
                     </h3>

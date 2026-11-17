@@ -2,6 +2,8 @@
 
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
+import { PageHeader } from "@/components/PageHeader";
+import { useToast } from "@/components/Toast";
 import { useEffect, useState, useRef } from "react";
 import { api, convex, deleteFilesByUrl, errorMessage, getToken, uploadFile } from "@/lib/convex";
 import {
@@ -16,7 +18,9 @@ import {
   ExternalLink,
   MoreVertical,
   Check,
-  Ban
+  Ban,
+  ArrowUp,
+  ArrowDown,
 } from "lucide-react";
 import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -53,6 +57,7 @@ interface CommunityAd {
 }
 
 export default function CommunityAdsPage() {
+  const toast = useToast();
   const [ads, setAds] = useState<CommunityAd[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -74,8 +79,6 @@ export default function CommunityAdsPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [filePreview, setFilePreview] = useState<string | null>(null);
   const [uploadProgress, setUploadProgress] = useState(0);
-  const [showAlert, setShowAlert] = useState(false);
-  const [alertMessage, setAlertMessage] = useState("");
 
   useEffect(() => {
     fetchAds();
@@ -132,6 +135,17 @@ export default function CommunityAdsPage() {
     }
   };
 
+  /** Moves an ad one place up (-1) or down (+1); same save path as drag and drop. */
+  const moveAd = (id: string, delta: -1 | 1) => {
+    const from = ads.findIndex((a) => a.id === id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= ads.length) return;
+    const reordered = arrayMove(ads, from, to).map((item, index) => ({ ...item, display_order: index + 1 }));
+    setAds(reordered);
+    updateDisplayOrders(reordered);
+    toast.success(`Moved "${ads[from].title}" ${delta < 0 ? "up" : "down"}.`, { live: true });
+  };
+
   const updateDisplayOrders = async (
     items: { id: string; display_order: number; title: string, image_url: string, is_active: boolean, duration_seconds: number }[]
   ) => {
@@ -183,11 +197,12 @@ export default function CommunityAdsPage() {
       }
 
       setAds(ads.filter((ad) => ad.id !== deleteTarget));
+      toast.success("Ad deleted.", { live: true });
       setIsDeleteDialogOpen(false);
       setDeleteTarget(null);
     } catch (err: any) {
       console.error("Error deleting ad:", err);
-      alert("Failed to delete ad");
+      toast.error("Couldn't delete the ad. Please try again.");
     }
   };
 
@@ -284,6 +299,7 @@ export default function CommunityAdsPage() {
 
       await fetchAds();
       setIsModalOpen(false);
+      toast.success(selectedAd ? "Ad updated." : "Ad added.", { live: true });
       resetForm();
     } catch (err: any) {
       console.error("Error saving ad (full):", err);
@@ -324,69 +340,52 @@ export default function CommunityAdsPage() {
   return (
     <ProtectedRoute>
       <Layout>
-        <div className="flex justify-between items-center mb-6">
-          <h1 className="text-2xl font-bold text-gray-900 dark:text-white flex items-center gap-2">
-            <Megaphone className="h-8 w-8 text-primary" />
-            Community Ads
-          </h1>
-          <button
-            onClick={() => {
-              resetForm();
-              setIsModalOpen(true);
-            }}
-            className="bg-primary hover:bg-primary-dark text-white px-4 py-2 rounded-lg flex items-center transition-colors"
-          >
-            <Plus className="h-5 w-5 mr-2" />
-            Add New Ad
-          </button>
-        </div>
+        <PageHeader
+          title="Partner ads"
+          description="Image slides that rotate in the Community Partner box. Drag a row, or use the arrows, to change the order."
+          showsOn="Homepage › Community Partner box"
+          actions={
+            <button
+              type="button"
+              onClick={() => {
+                resetForm();
+                setIsModalOpen(true);
+              }}
+              className="btn-primary"
+            >
+              <Plus className="h-5 w-5" aria-hidden />
+              Add ad
+            </button>
+          }
+        />
 
-        {/* Search Bar */}
-        <div className="mb-8">
-            <div className="relative max-w-xl">
-                <Search className="absolute left-4 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
-                <input
-                type="text"
-                placeholder="Search ads by title..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-11 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl focus:outline-none focus:ring-2 focus:ring-primary bg-white dark:bg-gray-800 text-gray-900 dark:text-white shadow-sm transition-all"
-                />
-            </div>
-        </div>
-
-        {/* Stats Cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-             <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center justify-between hover:shadow-md transition-shadow">
-                <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Total Ads</p>
-                    <p className="text-3xl font-bold text-gray-900 dark:text-white">{ads.length}</p>
-                </div>
-                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-                    <Megaphone className="h-6 w-6 text-blue-500" />
-                </div>
-            </div>
-             <div className="bg-white dark:bg-gray-800 p-6 rounded-xl shadow-sm border border-gray-200 dark:border-gray-700 flex items-center justify-between hover:shadow-md transition-shadow">
-                <div>
-                    <p className="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">In Carousel</p>
-                    <p className="text-3xl font-bold text-green-500">{ads.filter(a => a.is_active).length}</p>
-                    <p className="text-xs text-gray-400 mt-1">Active ads rotating</p>
-                </div>
-                <div className="p-3 bg-green-50 dark:bg-green-900/20 rounded-lg">
-                    <Check className="h-6 w-6 text-green-500" />
-                </div>
-            </div>
+        <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="relative w-full max-w-md">
+            <label htmlFor="ads-search" className="sr-only">Search ads</label>
+            <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" aria-hidden />
+            <input
+              id="ads-search"
+              type="search"
+              placeholder="Search by title"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="field pl-10"
+            />
+          </div>
+          <p className="tabular text-sm text-gray-700 dark:text-gray-300">
+            {ads.filter((a) => a.is_active).length} of {ads.length} showing on the website
+          </p>
         </div>
 
         {/* Ads Table */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow overflow-hidden border border-gray-200 dark:border-gray-700">
+        <div className="overflow-hidden rounded-xl border border-gray-200 bg-white dark:border-gray-700 dark:bg-gray-800">
           {loading ? (
             <div className="flex justify-center items-center h-64">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
             </div>
           ) : filteredAds.length === 0 ? (
             <div className="text-center py-12">
-              <ImageIcon className="mx-auto h-12 w-12 text-gray-400" />
+              <ImageIcon className="mx-auto h-12 w-12 text-gray-400" aria-hidden />
               <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
                 No ads found
               </h3>
@@ -401,36 +400,18 @@ export default function CommunityAdsPage() {
                     collisionDetection={closestCenter}
                     onDragEnd={handleDragEnd}
                   >
-              <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
-                <thead className="bg-gray-50 dark:bg-gray-900/50">
+              <table className="min-w-full">
+                <caption className="sr-only">Partner ads in the order they rotate</caption>
+                <thead className="border-b border-gray-200 bg-gray-50 dark:border-gray-700 dark:bg-gray-900/40">
                   <tr>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider w-10">
-                      {/* Drag Handle Column */}
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Preview
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Title
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Link
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Duration
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-center text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Order
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Status
-                    </th>
-                    <th scope="col" className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                      Actions
-                    </th>
+                    <th scope="col" className="px-2 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 sm:px-4">Order</th>
+                    <th scope="col" className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">Ad</th>
+                    <th scope="col" className="hidden px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 md:table-cell">Shows for</th>
+                    <th scope="col" className="hidden px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 sm:table-cell">Status</th>
+                    <th scope="col" className="px-4 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300"><span className="sr-only">Actions</span></th>
                   </tr>
                 </thead>
-                <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
+                <tbody className="divide-y divide-gray-100 dark:divide-gray-700">
                     <SortableContext
                       items={filteredAds}
                       strategy={verticalListSortingStrategy}
@@ -445,6 +426,9 @@ export default function CommunityAdsPage() {
                           <SortableAdRow
                             key={ad.id}
                             ad={ad}
+                            isFirst={ads[0]?.id === ad.id}
+                            isLast={ads[ads.length - 1]?.id === ad.id}
+                            onMove={moveAd}
                             activeOrder={ad.is_active ? activeIndex : null}
                             onEdit={handleEdit}
                             onDelete={handleDelete}
@@ -467,33 +451,33 @@ export default function CommunityAdsPage() {
               setIsModalOpen(false);
               setError(null);
             }}
-            title={selectedAd ? "Edit Ad" : "New Community Ad"}
+            title={selectedAd ? "Edit ad" : "Add ad"}
           >
             <form onSubmit={handleSubmit} className="space-y-4">
                {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded text-sm">
+                <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
                   <strong>Error:</strong> {error}
                 </div>
               )}
 
               {/* Title */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="commun-title" className="label">
                   Title <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id="commun-title"
                   type="text"
                   required
                   value={formData.title}
                   onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="field"
                   placeholder="e.g. Summer Festival Promo"
                 />
               </div>
 
                {/* Image Upload */}
                <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label className="label">
                   Ad Image <span className="text-red-500">*</span>
                 </label>
                 <div
@@ -536,10 +520,10 @@ export default function CommunityAdsPage() {
                   ) : (
                     <div className="space-y-2">
                       <div className="mx-auto w-12 h-12 rounded-full bg-gray-100 dark:bg-gray-700 flex items-center justify-center">
-                        <Upload className="h-6 w-6 text-gray-400" />
+                        <Upload className="h-6 w-6 text-gray-400" aria-hidden />
                       </div>
                       <div>
-                        <label className="cursor-pointer">
+                        <label className="cursor-pointer rounded focus-within:outline focus-within:outline-2 focus-within:outline-offset-2">
                           <span className="text-primary hover:text-primary-dark font-medium">
                             Click to upload
                           </span>
@@ -547,7 +531,7 @@ export default function CommunityAdsPage() {
                             type="file"
                             accept="image/*"
                             onChange={handleFileInputChange}
-                            className="hidden"
+                            className="sr-only"
                           />
                         </label>
                         <span className="text-gray-500 dark:text-gray-400">
@@ -569,7 +553,7 @@ export default function CommunityAdsPage() {
                     </div>
                     <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2">
                       <div
-                        className="bg-primary h-2 rounded-full transition-all duration-300"
+                        className="bg-primary h-2 rounded-full transition-[width] duration-300"
                         style={{ width: `${uploadProgress}%` }}
                       />
                     </div>
@@ -579,92 +563,70 @@ export default function CommunityAdsPage() {
 
                 {/* Link URL */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="commun-link-url-optional" className="label">
                   Link URL (Optional)
                 </label>
-                <input
+                <input id="commun-link-url-optional"
                   type="url"
                   value={formData.link_url}
                   onChange={(e) => setFormData({ ...formData, link_url: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="field"
                   placeholder="https://example.com/promo"
                 />
               </div>
 
               {/* Display Duration */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Display Duration (seconds)
+                <label htmlFor="commun-display-duration-seconds" className="label">
+                  How long it shows (seconds)
                 </label>
-                <input
+                <input id="commun-display-duration-seconds"
                   type="number"
                   min={3}
                   max={60}
                   value={formData.duration_seconds}
                   onChange={(e) => setFormData({ ...formData, duration_seconds: Math.min(60, Math.max(3, parseInt(e.target.value) || 10)) })}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="field"
                   placeholder="10"
                 />
                 <p className="text-xs text-gray-400 mt-1">How long this ad shows (3-60s)</p>
               </div>
 
-              {/* Is Active Toggle */}
-              <div className="flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 rounded-lg border border-gray-200 dark:border-gray-600">
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                      Include in Carousel
-                    </label>
-                     {/* Show Carousel Sequence if active */}
-                     {formData.is_active && selectedAd && (
-                         <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400">
-                             Sequence #{ads.filter(a => a.is_active && a.display_order <= formData.display_order).length}
-                         </span>
-                     )}
-                  </div>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {formData.is_active 
-                      ? "✨ Active - Will rotate in the ad carousel (10s each)" 
-                      : "💤 Inactive - Hidden from carousel"}
-                  </p>
-                </div>
-                <label className="flex items-center cursor-pointer">
-                  <div className="relative">
-                    <input
-                      type="checkbox"
-                      className="sr-only"
-                      checked={formData.is_active}
-                      onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
-                    />
-                    <div className={`block w-14 h-8 rounded-full transition-colors ${formData.is_active ? 'bg-green-500' : 'bg-gray-300 dark:bg-gray-600'}`}></div>
-                    <div className={`dot absolute left-1 top-1 bg-white w-6 h-6 rounded-full transition-transform ${formData.is_active ? 'transform translate-x-6' : ''}`}></div>
-                  </div>
-                </label>
-              </div>
+              <label className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-300 p-3 dark:border-gray-600">
+                <input
+                  type="checkbox"
+                  checked={formData.is_active}
+                  onChange={(e) => setFormData({ ...formData, is_active: e.target.checked })}
+                  className="mt-1 h-4 w-4 accent-[rgb(var(--primary))]"
+                />
+                <span>
+                  <span className="block text-base font-medium text-gray-900 dark:text-white">Show on the website</span>
+                  <span className="block text-sm text-gray-600 dark:text-gray-400">
+                    Untick to keep the ad here without showing it.
+                  </span>
+                </span>
+              </label>
 
-
-
-
-              <div className="flex justify-end space-x-3 pt-4 border-t border-gray-100 dark:border-gray-700">
+              <div className="flex flex-col-reverse gap-3 pt-4 sm:flex-row sm:justify-end">
                 <button
                   type="button"
                   onClick={() => setIsModalOpen(false)}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                  className="btn-secondary"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center"
+                  className="btn-primary"
                 >
                   {submitting ? (
                     <>
-                      <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
-                      Saving...
+                      <Loader2 className="h-4 w-4 inline animate-spin mr-2" aria-hidden />
+                      Saving…
                     </>
                   ) : (
-                    "Save Ad"
+                    (selectedAd ? "Save changes" : "Add ad")
                   )}
                 </button>
               </div>
@@ -680,50 +642,12 @@ export default function CommunityAdsPage() {
               setDeleteTarget(null);
             }}
             onConfirm={confirmDelete}
-            title="Delete Ad"
-            message="Are you sure you want to delete this ad? This action cannot be undone."
-            confirmText="Delete"
+            title="Delete this ad?"
+            message="It will disappear from the website straight away, along with its image. This can't be undone."
+            confirmText="Delete ad"
             cancelText="Cancel"
             danger
           />
-
-        {/* Custom Alert Popup */}
-        {showAlert && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-4">
-            <div className="bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 max-w-md w-full overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-              {/* Header with gradient */}
-              <div className="bg-gradient-to-r from-blue-500 to-primary p-6 text-center">
-                <div className="text-6xl mb-3">💡</div>
-                <h3 className="text-xl font-bold text-white">Heads Up!</h3>
-              </div>
-              
-              {/* Content */}
-              <div className="p-6">
-                <p className="text-gray-700 dark:text-gray-300 text-center whitespace-pre-line leading-relaxed">
-                  {alertMessage}
-                </p>
-              </div>
-              
-              {/* Footer */}
-              <div className="bg-gray-50 dark:bg-gray-900/50 px-6 py-4 flex justify-center">
-                <button
-                  onClick={() => {
-                    setShowAlert(false);
-                    // Re-submit the form with the toggled-off state
-                    // Create a synthetic event to re-trigger handleSubmit
-                    const form = document.querySelector('form');
-                    if (form) {
-                      form.requestSubmit();
-                    }
-                  }}
-                  className="px-6 py-2.5 bg-primary hover:bg-primary-dark text-white font-medium rounded-lg transition-colors shadow-md hover:shadow-lg"
-                >
-                  Got it! Save as Inactive ✨
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
 
       </Layout>
     </ProtectedRoute>
@@ -750,123 +674,109 @@ function ImageIcon({ className }: { className?: string }) {
 
 function SortableAdRow({
   ad,
-  activeOrder,
   onEdit,
   onDelete,
+  onMove,
+  isFirst,
+  isLast,
   isSearching,
 }: {
   ad: CommunityAd;
-  activeOrder: number | null;
+  activeOrder?: number | null;
   onEdit: (ad: CommunityAd) => void;
   onDelete: (id: string) => void;
+  onMove: (id: string, delta: -1 | 1) => void;
+  isFirst: boolean;
+  isLast: boolean;
   isSearching: boolean;
 }) {
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: ad.id, disabled: isSearching });
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+    id: ad.id,
+    disabled: isSearching,
+  });
 
   const style = {
     transform: CSS.Transform.toString(transform),
     transition,
-    zIndex: isDragging ? 50 : "auto", 
-    position: "relative" as "relative",
+    zIndex: isDragging ? 50 : "auto",
+    position: "relative" as const,
   };
 
+  const iconBtn =
+    "btn h-9 w-9 px-0 text-gray-700 hover:bg-gray-100 disabled:opacity-30 dark:text-gray-200 dark:hover:bg-gray-700";
+
   return (
-    <tr
-      ref={setNodeRef}
-      style={style}
-      className={`transition-colors ${
-        ad.is_active
-          ? "bg-green-50 dark:bg-green-900/10"
-          : "hover:bg-gray-50 dark:hover:bg-gray-700/50"
-      } ${isDragging ? "shadow-lg opacity-75 bg-blue-50 dark:bg-blue-900/20" : ""}`}
-    >
-      <td className="px-6 py-4 whitespace-nowrap w-10">
+    <tr ref={setNodeRef} style={style} className={isDragging ? "bg-gray-50 shadow-lg dark:bg-gray-700" : ""}>
+      <td className="whitespace-nowrap px-2 py-3 sm:px-4">
         {!isSearching && (
-          <div {...attributes} {...listeners} className="cursor-grab hover:text-primary text-gray-400">
-            <GripVertical className="h-5 w-5" />
+          <div className="flex items-center gap-1">
+            <button
+              type="button"
+              {...attributes}
+              {...listeners}
+              aria-label={`Drag to reorder ${ad.title}`}
+              className={`${iconBtn} hidden cursor-grab active:cursor-grabbing sm:inline-flex`}
+            >
+              <GripVertical className="h-5 w-5" aria-hidden />
+            </button>
+            <button type="button" onClick={() => onMove(ad.id, -1)} disabled={isFirst} aria-label={`Move ${ad.title} up`} className={iconBtn}>
+              <ArrowUp className="h-4 w-4" aria-hidden />
+            </button>
+            <button type="button" onClick={() => onMove(ad.id, 1)} disabled={isLast} aria-label={`Move ${ad.title} down`} className={iconBtn}>
+              <ArrowDown className="h-4 w-4" aria-hidden />
+            </button>
           </div>
         )}
       </td>
-      <td className={`px-6 py-4 whitespace-nowrap ${ad.is_active ? 'border-l-4 border-green-500' : ''}`}>
-        <div className="h-16 w-24 relative rounded overflow-hidden bg-gray-100 dark:bg-gray-700">
-          <img
-            src={ad.image_url}
-            alt={ad.title}
-            className="h-full w-full object-cover"
-          />
+      <td className="max-w-[9rem] px-2 py-3 sm:max-w-xs sm:px-4">
+        <div className="flex items-center gap-3">
+          <div className="hidden h-12 w-20 shrink-0 overflow-hidden rounded-md bg-gray-100 dark:bg-gray-700 sm:block">
+            <img src={ad.image_url} alt="" className="h-full w-full object-cover" />
+          </div>
+          <div className="min-w-0">
+            <p className="truncate text-base font-medium text-gray-900 dark:text-white">{ad.title}</p>
+            <p className="text-sm text-gray-600 dark:text-gray-400 sm:hidden">{ad.is_active ? "Showing" : "Hidden"}</p>
+            {ad.link_url ? (
+              <a
+                href={ad.link_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1 text-sm text-primary underline-offset-2 hover:underline"
+              >
+                Opens a link <ExternalLink className="h-3.5 w-3.5" aria-hidden />
+                <span className="sr-only">(new tab)</span>
+              </a>
+            ) : (
+              <p className="text-sm text-gray-600 dark:text-gray-400">No link</p>
+            )}
+          </div>
         </div>
       </td>
-      <td className="px-6 py-4 whitespace-nowrap">
-        <div className="text-sm font-medium text-gray-900 dark:text-white">
-          {ad.title}
-        </div>
-        <div className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-          Created {format(new Date(ad.created_at), "MMM d, yyyy")}
-        </div>
+      <td className="tabular hidden whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300 md:table-cell">
+        {ad.duration_seconds || 10} seconds
       </td>
-      <td className="px-6 py-4 whitespace-nowrap">
-        {ad.link_url ? (
-          <a
-            href={ad.link_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="text-sm text-blue-500 hover:underline flex items-center"
-          >
-            Open Link <ExternalLink className="h-3 w-3 ml-1" />
-          </a>
-        ) : (
-          <span className="text-sm text-gray-400">No link</span>
-        )}
-      </td>
-      <td className="px-6 py-4 whitespace-nowrap text-center">
-        <span className="text-sm font-medium text-gray-900 dark:text-white">
-          {ad.duration_seconds || 10}s
-        </span>
-      </td>
-      <td className="px-6 py-4 whitespace-nowrap text-center">
-        {activeOrder ? (
-          <span className="inline-flex items-center justify-center w-8 h-8 text-sm font-bold text-primary bg-primary/10 rounded-full">
-            {activeOrder}
+      <td className="hidden whitespace-nowrap px-4 py-3 text-sm sm:table-cell">
+        {ad.is_active ? (
+          <span className="inline-flex rounded-full bg-emerald-100 px-2.5 py-0.5 font-medium text-emerald-900 dark:bg-emerald-900/40 dark:text-emerald-200">
+            Showing
           </span>
         ) : (
-           <span className="inline-flex items-center justify-center w-8 h-8 text-xs text-gray-400 bg-gray-100 dark:bg-gray-700/50 rounded-full" title="Inactive - Not in carousel">
-            -
+          <span className="inline-flex rounded-full bg-gray-100 px-2.5 py-0.5 font-medium text-gray-800 dark:bg-gray-700 dark:text-gray-200">
+            Hidden
           </span>
         )}
       </td>
-      <td className="px-6 py-4 whitespace-nowrap">
-        <span
-          className={`px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-            ad.is_active
-              ? "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-400"
-              : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-          }`}
-        >
-          {ad.is_active ? "Active" : "Inactive"}
-        </span>
-      </td>
-      <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-        <button
-          onClick={() => onEdit(ad)}
-          className="text-primary hover:text-primary-dark mr-4 transition-colors"
-          title="Edit"
-        >
-          <Edit className="h-5 w-5" />
-        </button>
-        <button
-          onClick={() => onDelete(ad.id)}
-          className="text-red-600 hover:text-red-700 transition-colors"
-          title="Delete"
-        >
-          <Trash2 className="h-5 w-5" />
-        </button>
+      <td className="whitespace-nowrap px-2 py-3 text-right sm:px-4">
+        <div className="flex flex-col items-end gap-1 sm:flex-row sm:justify-end">
+          <button type="button" onClick={() => onEdit(ad)} className="btn-row-edit">
+            <Edit className="h-4 w-4" aria-hidden />
+            Edit<span className="sr-only"> {ad.title}</span>
+          </button>
+          <button type="button" onClick={() => onDelete(ad.id)} className="btn-row-delete">
+            <Trash2 className="h-4 w-4" aria-hidden />
+            Delete<span className="sr-only"> {ad.title}</span>
+          </button>
+        </div>
       </td>
     </tr>
   );

@@ -3,75 +3,190 @@
 @tailwind utilities;
 
 @layer base {
+  /* Club green, darkened until white text on it passes 4.5:1. */
   :root {
-    --background: 255 255 255;
-    --foreground: 31 41 55;
-    --card: 255 255 255;
-    --border: 229 231 235;
-    --primary: 16 185 129;
+    --primary: 4 120 87; /* #047857 */
+    --primary-strong: 6 95 70; /* #065f46 */
+    --on-primary: 255 255 255;
   }
 
+  /* In dark mode the accent gets lighter, so text on it turns dark. */
   .dark {
-    --background: 31 41 55;
-    --foreground: 249 250 251;
-    --card: 17 24 39;
-    --border: 55 65 81;
-    --primary: 16 185 129;
+    --primary: 52 211 153; /* #34d399 */
+    --primary-strong: 110 231 183; /* #6ee7b7 */
+    --on-primary: 2 44 34; /* #022c22 */
   }
-}
 
-@layer base {
+  html {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
   body {
-    @apply bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100;
+    @apply bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  /* 16px fields so phones don't zoom in on focus. */
+  input,
+  select,
+  textarea {
+    font-size: 16px;
+  }
+
+  /* One neutral focus ring for every control, shown only for keyboard use. */
+  :focus-visible {
+    outline: 2px solid rgb(17 24 39 / 0.75);
+    outline-offset: 2px;
+  }
+  .dark :focus-visible {
+    outline-color: rgb(255 255 255 / 0.8);
+  }
+
+  /* Numbers that change (counts, dates) keep their width. */
+  table,
+  .tabular {
+    font-variant-numeric: tabular-nums;
   }
 }
 
-/* Custom Scrollbar Styles */
+@layer components {
+  /* Buttons: one height, one radius, labelled. Use these instead of one-off classes. */
+  .btn {
+    @apply inline-flex min-h-[40px] items-center justify-center gap-2 rounded-lg px-4 text-sm font-medium;
+    transition: background-color 150ms ease, color 150ms ease, border-color 150ms ease, transform 150ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+  .btn:active:not(:disabled) {
+    transform: scale(0.96);
+  }
+  .btn:disabled {
+    @apply cursor-not-allowed opacity-50;
+  }
+  .btn-primary {
+    @apply btn bg-primary text-on-primary hover:bg-primary-dark;
+  }
+  .btn-secondary {
+    @apply btn border border-gray-300 bg-white text-gray-800 hover:bg-gray-100 dark:border-gray-600 dark:bg-gray-800 dark:text-gray-100 dark:hover:bg-gray-700;
+  }
+  .btn-danger {
+    @apply btn bg-red-700 text-white hover:bg-red-800;
+  }
+  /* Small labelled row actions ("Edit", "Delete"): 36px tall with a 40px hit area. */
+  .btn-row {
+    @apply relative inline-flex min-h-[36px] items-center gap-1.5 rounded-md px-2 text-sm font-medium sm:px-3;
+    transition: background-color 150ms ease, color 150ms ease;
+  }
+  .btn-row::after {
+    content: '';
+    position: absolute;
+    inset: -2px 0;
+  }
+  .btn-row-edit {
+    @apply btn-row text-gray-800 hover:bg-gray-100 dark:text-gray-100 dark:hover:bg-gray-700;
+  }
+  .btn-row-delete {
+    @apply btn-row text-red-700 hover:bg-red-50 dark:text-red-300 dark:hover:bg-red-900/30;
+  }
+  .field {
+    @apply block w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-gray-900 placeholder-gray-500 dark:border-gray-600 dark:bg-gray-800 dark:text-white dark:placeholder-gray-400;
+    transition: border-color 150ms ease;
+  }
+  .field:focus {
+    @apply border-gray-900 outline-none dark:border-white;
+  }
+  .label {
+    @apply mb-1 block text-sm font-medium text-gray-800 dark:text-gray-200;
+  }
+  .hint {
+    @apply mt-1 text-sm text-gray-600 dark:text-gray-400;
+  }
+}
+
+/* Pop-ups: fade and grow slightly from 97%; exits are handled by unmounting. */
+@keyframes dialog-in {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(4px);
+  }
+}
+@keyframes scrim-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+.animate-dialog-in {
+  animation: dialog-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-scrim-in {
+  animation: scrim-in 220ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+.animate-toast-in {
+  animation: toast-in 200ms cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+/* Same information, no movement. Spinners keep turning so a wait never looks frozen. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .animate-spin {
+    animation-duration: 1s !important;
+    animation-iteration-count: infinite !important;
+  }
+}
+
+/* Thin scrollbars inside panels */
 @layer utilities {
   .scrollbar-thin::-webkit-scrollbar {
     width: 6px;
     height: 6px;
   }
-  
   .scrollbar-thin::-webkit-scrollbar-track {
     background: transparent;
   }
-  
   .scrollbar-thin::-webkit-scrollbar-thumb {
     @apply bg-gray-300 dark:bg-gray-600 rounded-full;
   }
-  
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    @apply bg-gray-400 dark:bg-gray-500;
-  }
-
-  /* Firefox support */
   .scrollbar-thin {
     scrollbar-width: thin;
     scrollbar-color: theme('colors.gray.300') transparent;
   }
-  
   .dark .scrollbar-thin {
     scrollbar-color: theme('colors.gray.600') transparent;
   }
 }
 
-/* React DatePicker styles */
+/* React DatePicker */
 .react-datepicker-wrapper {
   width: 100%;
 }
-
 .react-datepicker__input-container input {
   width: 100%;
-  padding: 0.5rem;
-  border-radius: 0.375rem;
-  border: 1px solid rgb(229 231 235);
+  min-height: 42px;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid rgb(209 213 219);
   background-color: white;
   color: rgb(17 24 39);
 }
-
 .dark .react-datepicker__input-container input {
-  border-color: rgb(55 65 81);
+  border-color: rgb(75 85 99);
   background-color: rgb(31 41 55);
   color: rgb(249 250 251);
 }

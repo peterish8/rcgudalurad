@@ -2,9 +2,11 @@
 
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
+import { PageHeader } from "@/components/PageHeader";
+import { useToast } from "@/components/Toast";
 import { useEffect, useState, useRef } from "react";
 import { api, convex, errorMessage, getToken } from "@/lib/convex";
-import { Plus, Edit, Trash2, Search, Loader2, Users, ChevronDown, ArrowUp, ArrowDown, Upload, Download, FileText } from "lucide-react";
+import { Plus, Edit, Trash2, Search, Loader2, Users, ArrowUp, ArrowDown, Upload, Download, FileText } from "lucide-react";
 import Papa from "papaparse";
 import { Modal } from "@/components/Modal";
 import { ConfirmDialog } from "@/components/ConfirmDialog";
@@ -19,6 +21,7 @@ interface BoardMember {
 }
 
 export default function BoardMembersPage() {
+  const toast = useToast();
   const [members, setMembers] = useState<BoardMember[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -35,20 +38,33 @@ export default function BoardMembersPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchError, setFetchError] = useState<string | null>(null);
-  const [openSectionDropdown, setOpenSectionDropdown] = useState<string | null>(null);
   const [updatingSection, setUpdatingSection] = useState<string | null>(null);
   const [sortColumn, setSortColumn] = useState<string | null>(null);
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [dropdownPosition, setDropdownPosition] = useState<Record<string, "up" | "down">>({});
   const [isImporting, setIsImporting] = useState(false);
   const [isPasteModalOpen, setIsPasteModalOpen] = useState(false);
   const [pasteContent, setPasteContent] = useState("");
-  const [isFormSectionDropdownOpen, setIsFormSectionDropdownOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetchMembers();
   }, []);
+
+  // Where each section appears on the website's "Our Board Members" block.
+  const SECTIONS = [
+    { value: "fixed", label: "Top row", hint: "Large cards above the scrolling rows. Up to 3 people." },
+    { value: "layer1", label: "Scrolling row 1", hint: "First row that slides sideways." },
+    { value: "layer2", label: "Scrolling row 2", hint: "Second row, slides the other way." },
+    { value: "layer3", label: "Scrolling row 3", hint: "Third row." },
+  ];
+  const sectionLabel = (section?: string | null) =>
+    SECTIONS.find((o) => o.value === section)?.label ?? "Not shown on the website";
+
+  /** The scrolling row with the fewest people, so new members always appear somewhere. */
+  const leastFilledRow = (extra: Record<string, number> = {}) =>
+    ["layer1", "layer2", "layer3"]
+      .map((row) => ({ row, n: members.filter((m) => m.section === row).length + (extra[row] ?? 0) }))
+      .sort((a, b) => a.n - b.n)[0].row;
 
   const getDefaultSection = (designation: string): string => {
     const normalizedDesignation = designation.trim().toLowerCase();
@@ -59,34 +75,9 @@ export default function BoardMembersPage() {
     ) {
       return "fixed";
     }
-    return "scrolling";
+    return leastFilledRow();
   };
 
-  useEffect(() => {
-    if (typeof window === 'undefined') return;
-    
-    const handleClickOutside = (event: MouseEvent) => {
-      const target = event.target as HTMLElement;
-      // Don't close if clicking inside the dropdown or the badge button
-      if (target.closest('[data-section-dropdown]') || target.closest('[data-section-badge]')) {
-        return;
-      }
-      if (openSectionDropdown) {
-        setOpenSectionDropdown(null);
-      }
-    };
-
-    if (openSectionDropdown) {
-      // Use click instead of mousedown to allow button clicks to process first
-      document.addEventListener("click", handleClickOutside, true);
-    }
-
-    return () => {
-      if (typeof window !== 'undefined') {
-        document.removeEventListener("click", handleClickOutside, true);
-      }
-    };
-  }, [openSectionDropdown]);
 
   async function fetchMembers() {
     try {
@@ -107,7 +98,7 @@ export default function BoardMembersPage() {
     setFormData({
       name: "",
       designation: "",
-      section: "scrolling",
+      section: leastFilledRow(),
     });
     setError("");
     setIsModalOpen(true);
@@ -130,8 +121,6 @@ export default function BoardMembersPage() {
   };
 
   const handleQuickSectionChange = async (memberId: string, newSection: string) => {
-    // Close dropdown first
-    setOpenSectionDropdown(null);
     
     // Find current member
     const currentMember = members.find(m => m.id === memberId);
@@ -163,6 +152,7 @@ export default function BoardMembersPage() {
 
       // Refresh the list to ensure consistency
       await fetchMembers();
+      toast.success(`Moved to ${sectionLabel(newSection)}.`, { live: true });
     } catch (err: any) {
       console.error("Error updating section:", err);
       setError(errorMessage(err, "Failed to update section"));
@@ -181,6 +171,7 @@ export default function BoardMembersPage() {
 
       await fetchMembers();
       setDeleteTarget(null);
+      toast.success("Member removed.", { live: true });
     } catch (err: any) {
       console.error("Error deleting board member:", err);
       setError(errorMessage(err, "Failed to delete board member"));
@@ -232,6 +223,7 @@ export default function BoardMembersPage() {
 
       await fetchMembers();
       setIsModalOpen(false);
+      toast.success(selectedMember ? "Member updated." : "Member added.", { live: true });
       setFormData({
         name: "",
         designation: "",
@@ -260,11 +252,17 @@ export default function BoardMembersPage() {
         throw new Error("Missing required columns: name, designation");
       }
 
-      const newMembers = rows.map((row) => ({
-        name: row.name?.trim(),
-        designation: row.designation?.trim(),
-        section: row.section?.trim() || getDefaultSection(row.designation?.trim() || ""),
-      })).filter(m => m.name && m.designation);
+      const added: Record<string, number> = {};
+      const newMembers = rows
+        .filter((row) => row.name?.trim() && row.designation?.trim())
+        .map((row) => {
+          const designation = row.designation.trim();
+          const given = row.section?.trim();
+          const key = getDefaultSection(designation) === "fixed";
+          const section = given && given !== "scrolling" ? given : key ? "fixed" : leastFilledRow(added);
+          added[section] = (added[section] ?? 0) + 1;
+          return { name: row.name.trim(), designation, section };
+        });
 
       if (newMembers.length === 0) {
           throw new Error("No valid members found in CSV");
@@ -273,7 +271,7 @@ export default function BoardMembersPage() {
       await convex.mutation(api.boardMembers.createMany, { token: getToken(), members: newMembers });
 
       await fetchMembers();
-      alert(`Successfully imported ${newMembers.length} members`);
+      toast.success(`Added ${newMembers.length} ${newMembers.length === 1 ? "member" : "members"}.`, { live: true });
       setIsPasteModalOpen(false);
       setPasteContent("");
       
@@ -403,143 +401,104 @@ export default function BoardMembersPage() {
     <ProtectedRoute>
       <Layout>
         <div className="space-y-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Manage Board Members
-              </h1>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                Create, edit, and delete board members
-              </p>
-            </div>
-            <div className="flex gap-2 mt-4 sm:mt-0">
-              <input
-                type="file"
-                ref={fileInputRef}
-                onChange={handleFileUpload}
-                accept=".csv"
-                className="hidden"
-              />
-              <a
-                href="/board-members-template.csv"
-                download
-                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-              >
-                <Download className="h-5 w-5 mr-2" />
-                Template
-              </a>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                disabled={isImporting}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-              >
-                {isImporting ? (
-                  <Loader2 className="h-5 w-5 mr-2 animate-spin" />
-                ) : (
-                  <Upload className="h-5 w-5 mr-2" />
-                )}
-                Import CSV
-              </button>
-              <button
-                onClick={() => {
-                  setFetchError(null);
-                  setPasteContent("");
-                  setIsPasteModalOpen(true);
-                }}
-                disabled={isImporting}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 shadow-sm text-sm font-medium rounded-md text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-800 hover:bg-gray-50 dark:hover:bg-gray-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-              >
-                <FileText className="h-5 w-5 mr-2" />
-                Paste Text
-              </button>
-              <button
-                onClick={handleCreate}
-                className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary"
-              >
-                <Plus className="h-5 w-5 mr-2" />
-                Add New Member
-              </button>
-            </div>
-          </div>
+          <input
+            type="file"
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            accept=".csv"
+            className="sr-only"
+            tabIndex={-1}
+            aria-hidden
+          />
+          <PageHeader
+            title="Board members"
+            description="Add, edit or remove people, and choose which row of the board section they appear in."
+            showsOn="Homepage › Our Board Members"
+            actions={
+              <>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFetchError(null);
+                    setPasteContent("");
+                    setIsPasteModalOpen(true);
+                  }}
+                  disabled={isImporting}
+                  className="btn-secondary"
+                >
+                  <FileText className="h-5 w-5" aria-hidden />
+                  Add many at once
+                </button>
+                <button type="button" onClick={handleCreate} className="btn-primary">
+                  <Plus className="h-5 w-5" aria-hidden />
+                  Add member
+                </button>
+              </>
+            }
+          />
 
-          <div className="flex flex-col sm:flex-row gap-4">
+          <div className="flex flex-col gap-3 sm:flex-row">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <label htmlFor="board-search" className="sr-only">Search members</label>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" aria-hidden />
               <input
-                type="text"
-                placeholder="Search board members..."
+                id="board-search"
+                type="search"
+                placeholder="Search by name or role"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="field pl-10"
               />
             </div>
-            <select
-              value={sectionFilter}
-              onChange={(e) => setSectionFilter(e.target.value)}
-              className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-            >
-              <option value="all">All Sections</option>
-              <option value="fixed">Fixed Section</option>
-              <option value="layer1">Layer 1</option>
-              <option value="layer2">Layer 2</option>
-              <option value="layer3">Layer 3</option>
-              <option value="none">Unassigned</option>
-            </select>
+            <div className="sm:w-56">
+              <label htmlFor="board-filter" className="sr-only">Show</label>
+              <select id="board-filter" value={sectionFilter} onChange={(e) => setSectionFilter(e.target.value)} className="field">
+                <option value="all">Everyone</option>
+                {SECTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
+                ))}
+                <option value="none">Not shown on the website</option>
+              </select>
+            </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-              <div className="text-sm text-gray-600 dark:text-gray-400">Fixed</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {fixedMembers.length}
+          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+            {[
+              { label: "Top row", n: fixedMembers.length, note: "of 3" },
+              { label: "Scrolling row 1", n: layer1Members.length },
+              { label: "Scrolling row 2", n: layer2Members.length },
+              { label: "Scrolling row 3", n: layer3Members.length },
+              { label: "Not shown", n: otherMembers.length },
+            ].map((c) => (
+              <div key={c.label} className="rounded-lg border border-gray-200 bg-white px-4 py-3 dark:border-gray-700 dark:bg-gray-800">
+                <dt className="text-sm text-gray-700 dark:text-gray-300">{c.label}</dt>
+                <dd className="tabular mt-1 text-2xl font-semibold text-gray-900 dark:text-white">
+                  {c.n}
+                  {c.note && <span className="ml-1 text-sm font-normal text-gray-600 dark:text-gray-400">{c.note}</span>}
+                </dd>
               </div>
-              <div className="text-xs text-gray-500 dark:text-gray-400">/3 max</div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-              <div className="text-sm text-gray-600 dark:text-gray-400">Layer 1</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {layer1Members.length}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-              <div className="text-sm text-gray-600 dark:text-gray-400">Layer 2</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {layer2Members.length}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-              <div className="text-sm text-gray-600 dark:text-gray-400">Layer 3</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {layer3Members.length}
-              </div>
-            </div>
-            <div className="bg-white dark:bg-gray-800 rounded-lg p-4 border border-gray-200 dark:border-gray-700">
-              <div className="text-sm text-gray-600 dark:text-gray-400">Unassigned</div>
-              <div className="text-2xl font-bold text-gray-900 dark:text-white">
-                {otherMembers.length}
-              </div>
-            </div>
-          </div>
+            ))}
+          </dl>
 
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+            <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg">
               <strong>Error:</strong> {error}
             </div>
           )}
 
           {fetchError && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+            <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg">
               <strong>Error fetching board members:</strong> {fetchError}
             </div>
           )}
 
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
             </div>
           ) : fetchError ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <Users className="mx-auto h-12 w-12 text-red-400" />
+              <Users className="mx-auto h-12 w-12 text-red-400" aria-hidden />
               <h3 className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">
                 Unable to load board members
               </h3>
@@ -549,7 +508,7 @@ export default function BoardMembersPage() {
             </div>
           ) : filteredMembers.length === 0 ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <Users className="mx-auto h-12 w-12 text-gray-400" />
+              <Users className="mx-auto h-12 w-12 text-gray-400" aria-hidden />
               <h3 className="mt-2 text-sm font-medium text-gray-900 dark:text-white">
                 No board members found
               </h3>
@@ -563,7 +522,7 @@ export default function BoardMembersPage() {
                 <table className="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
                   <thead className="bg-gray-50 dark:bg-gray-700">
                     <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      <th scope="col" className="hidden px-6 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 md:table-cell">
                         <button
                           onClick={() => handleSort("name")}
                           className="flex items-center gap-2 hover:text-gray-700 dark:hover:text-gray-200 transition-colors group"
@@ -572,270 +531,122 @@ export default function BoardMembersPage() {
                           <div className="flex flex-col">
                             {sortColumn === "name" ? (
                               sortDirection === "asc" ? (
-                                <ArrowUp className="h-4 w-4 text-primary" />
+                                <ArrowUp className="h-4 w-4 text-primary" aria-hidden />
                               ) : (
-                                <ArrowDown className="h-4 w-4 text-primary" />
+                                <ArrowDown className="h-4 w-4 text-primary" aria-hidden />
                               )
                             ) : (
                               <div className="flex flex-col -space-y-1 opacity-40 group-hover:opacity-70">
-                                <ArrowUp className="h-3 w-3" />
-                                <ArrowDown className="h-3 w-3" />
+                                <ArrowUp className="h-3 w-3" aria-hidden />
+                                <ArrowDown className="h-3 w-3" aria-hidden />
                               </div>
                             )}
                           </div>
                         </button>
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      <th scope="col" className="hidden px-6 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 md:table-cell">
                         <button
                           onClick={() => handleSort("designation")}
                           className="flex items-center gap-2 hover:text-gray-700 dark:hover:text-gray-200 transition-colors group"
                         >
-                          <span>Designation</span>
+                          <span>Role</span>
                           <div className="flex flex-col">
                             {sortColumn === "designation" ? (
                               sortDirection === "asc" ? (
-                                <ArrowUp className="h-4 w-4 text-primary" />
+                                <ArrowUp className="h-4 w-4 text-primary" aria-hidden />
                               ) : (
-                                <ArrowDown className="h-4 w-4 text-primary" />
+                                <ArrowDown className="h-4 w-4 text-primary" aria-hidden />
                               )
                             ) : (
                               <div className="flex flex-col -space-y-1 opacity-40 group-hover:opacity-70">
-                                <ArrowUp className="h-3 w-3" />
-                                <ArrowDown className="h-3 w-3" />
+                                <ArrowUp className="h-3 w-3" aria-hidden />
+                                <ArrowDown className="h-3 w-3" aria-hidden />
                               </div>
                             )}
                           </div>
                         </button>
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
+                      <th className="px-6 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
                         <button
                           onClick={() => handleSort("section")}
                           className="flex items-center gap-2 hover:text-gray-700 dark:hover:text-gray-200 transition-colors group"
                         >
-                          <span>Section</span>
+                          <span>Where it shows</span>
                           <div className="flex flex-col">
                             {sortColumn === "section" ? (
                               sortDirection === "asc" ? (
-                                <ArrowUp className="h-4 w-4 text-primary" />
+                                <ArrowUp className="h-4 w-4 text-primary" aria-hidden />
                               ) : (
-                                <ArrowDown className="h-4 w-4 text-primary" />
+                                <ArrowDown className="h-4 w-4 text-primary" aria-hidden />
                               )
                             ) : (
                               <div className="flex flex-col -space-y-1 opacity-40 group-hover:opacity-70">
-                                <ArrowUp className="h-3 w-3" />
-                                <ArrowDown className="h-3 w-3" />
+                                <ArrowUp className="h-3 w-3" aria-hidden />
+                                <ArrowDown className="h-3 w-3" aria-hidden />
                               </div>
                             )}
                           </div>
                         </button>
                       </th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Created Date
-                      </th>
-                      <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-300 uppercase tracking-wider">
-                        Actions
-                      </th>
+                      <th scope="col" className="px-6 py-3 text-right text-sm font-medium text-gray-700 dark:text-gray-300"><span className="sr-only">Actions</span></th>
                     </tr>
                   </thead>
                   <tbody className="bg-white dark:bg-gray-800 divide-y divide-gray-200 dark:divide-gray-700">
                     {filteredMembers.map((member) => (
-                      <tr
-                        key={member.id}
-                        className="hover:bg-gray-50 dark:hover:bg-gray-700"
-                      >
-                        <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">
+                      <tr key={member.id}>
+                        <td className="px-4 py-3 text-base font-medium text-gray-900 dark:text-white">
                           {member.name}
+                          <span className="block text-sm font-normal text-gray-600 dark:text-gray-400 md:hidden">{member.designation}</span>
+                          <span className="mt-2 block md:hidden">
+                            <label htmlFor={`row-m-${member.id}`} className="sr-only">Row for {member.name}</label>
+                            <select
+                              id={`row-m-${member.id}`}
+                              value={["fixed", "layer1", "layer2", "layer3"].includes(member.section ?? "") ? member.section! : "scrolling"}
+                              onChange={(e) => handleQuickSectionChange(member.id, e.target.value)}
+                              disabled={updatingSection === member.id}
+                              className="field py-1.5 text-sm font-normal"
+                            >
+                              {SECTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
+                              <option value="scrolling" disabled>Not shown on the website</option>
+                            </select>
+                          </span>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
+                        <td className="hidden whitespace-nowrap px-4 py-3 text-sm text-gray-700 dark:text-gray-300 md:table-cell">
                           {member.designation}
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm">
-                          <div className="relative">
-                            {updatingSection === member.id ? (
-                              <div className="flex items-center">
-                                <Loader2 className="h-4 w-4 animate-spin text-primary mr-2" />
-                                <span className="text-xs text-gray-500">Updating...</span>
-                              </div>
-                            ) : (
-                              <>
-                                <button
-                                  data-section-badge
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    const button = e.currentTarget;
-                                    const rect = button.getBoundingClientRect();
-                                    const viewportHeight = window.innerHeight;
-                                    const dropdownHeight = 200; // Approximate dropdown height
-                                    const spaceBelow = viewportHeight - rect.bottom;
-                                    const spaceAbove = rect.top;
-                                    
-                                    // If not enough space below but enough space above, open upward
-                                    if (spaceBelow < dropdownHeight && spaceAbove > dropdownHeight) {
-                                      setDropdownPosition({ ...dropdownPosition, [member.id]: "up" });
-                                    } else {
-                                      setDropdownPosition({ ...dropdownPosition, [member.id]: "down" });
-                                    }
-                                    
-                                    setOpenSectionDropdown(
-                                      openSectionDropdown === member.id ? null : member.id
-                                    );
-                                  }}
-                                  className={`inline-flex items-center px-2 py-1 text-xs font-semibold rounded-full cursor-pointer hover:opacity-80 transition-opacity ${
-                                    member.section === "fixed"
-                                      ? "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200"
-                                      : member.section === "layer1"
-                                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                                      : member.section === "layer2"
-                                      ? "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200"
-                                      : member.section === "layer3"
-                                      ? "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200"
-                                      : "bg-gray-100 text-gray-800 dark:bg-gray-700 dark:text-gray-300"
-                                  }`}
-                                >
-                                  {member.section === "fixed"
-                                    ? "Fixed (Top 3)"
-                                    : member.section === "layer1"
-                                    ? "Layer 1"
-                                    : member.section === "layer2"
-                                    ? "Layer 2"
-                                    : member.section === "layer3"
-                                    ? "Layer 3"
-                                    : "Auto"}
-                                  <ChevronDown className="h-3 w-3 ml-1" />
-                                </button>
-                                
-                                {openSectionDropdown === member.id && (
-                                  <>
-                                     <div
-                                       className="fixed inset-0 z-40"
-                                       onClick={() => setOpenSectionDropdown(null)}
-                                     />
-                                     <div 
-                                       data-section-dropdown
-                                       className={`absolute left-0 w-56 bg-white dark:bg-gray-800 rounded-xl shadow-2xl border border-gray-200 dark:border-gray-700 z-50 overflow-hidden ${
-                                         dropdownPosition[member.id] === "up"
-                                           ? "bottom-full mb-2"
-                                           : "top-full mt-2"
-                                       }`}
-                                       onClick={(e) => e.stopPropagation()}
-                                     >
-                                       <div className="py-2">
-                                         <button
-                                           onClick={(e) => {
-                                             e.preventDefault();
-                                             e.stopPropagation();
-                                             handleQuickSectionChange(member.id, "fixed");
-                                           }}
-                                           type="button"
-                                          className={`w-full text-left px-4 py-3 text-sm font-medium transition-all duration-200 flex items-center gap-3 ${
-                                            member.section === "fixed"
-                                              ? "bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 border-l-4 border-blue-500"
-                                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                          }`}
-                                        >
-                                          <div className={`w-3 h-3 rounded-full ${
-                                            member.section === "fixed"
-                                              ? "bg-blue-500"
-                                              : "bg-gray-300 dark:bg-gray-600"
-                                          }`} />
-                                          <span>Fixed (Top 3)</span>
-                                          {member.section === "fixed" && (
-                                            <span className="ml-auto text-xs">✓</span>
-                                          )}
-                                        </button>
-                                         <button
-                                           onClick={(e) => {
-                                             e.preventDefault();
-                                             e.stopPropagation();
-                                             handleQuickSectionChange(member.id, "layer1");
-                                           }}
-                                           type="button"
-                                          className={`w-full text-left px-4 py-3 text-sm font-medium transition-all duration-200 flex items-center gap-3 ${
-                                            member.section === "layer1"
-                                              ? "bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 border-l-4 border-green-500"
-                                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                          }`}
-                                        >
-                                          <div className={`w-3 h-3 rounded-full ${
-                                            member.section === "layer1"
-                                              ? "bg-green-500"
-                                              : "bg-gray-300 dark:bg-gray-600"
-                                          }`} />
-                                          <span>Layer 1</span>
-                                          {member.section === "layer1" && (
-                                            <span className="ml-auto text-xs">✓</span>
-                                          )}
-                                        </button>
-                                         <button
-                                           onClick={(e) => {
-                                             e.preventDefault();
-                                             e.stopPropagation();
-                                             handleQuickSectionChange(member.id, "layer2");
-                                           }}
-                                           type="button"
-                                          className={`w-full text-left px-4 py-3 text-sm font-medium transition-all duration-200 flex items-center gap-3 ${
-                                            member.section === "layer2"
-                                              ? "bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 border-l-4 border-purple-500"
-                                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                          }`}
-                                        >
-                                          <div className={`w-3 h-3 rounded-full ${
-                                            member.section === "layer2"
-                                              ? "bg-purple-500"
-                                              : "bg-gray-300 dark:bg-gray-600"
-                                          }`} />
-                                          <span>Layer 2</span>
-                                          {member.section === "layer2" && (
-                                            <span className="ml-auto text-xs">✓</span>
-                                          )}
-                                        </button>
-                                         <button
-                                           onClick={(e) => {
-                                             e.preventDefault();
-                                             e.stopPropagation();
-                                             handleQuickSectionChange(member.id, "layer3");
-                                           }}
-                                           type="button"
-                                          className={`w-full text-left px-4 py-3 text-sm font-medium transition-all duration-200 flex items-center gap-3 ${
-                                            member.section === "layer3"
-                                              ? "bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-l-4 border-orange-500"
-                                              : "text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                          }`}
-                                        >
-                                          <div className={`w-3 h-3 rounded-full ${
-                                            member.section === "layer3"
-                                              ? "bg-orange-500"
-                                              : "bg-gray-300 dark:bg-gray-600"
-                                          }`} />
-                                          <span>Layer 3</span>
-                                          {member.section === "layer3" && (
-                                            <span className="ml-auto text-xs">✓</span>
-                                          )}
-                                        </button>
-                                      </div>
-                                    </div>
-                                  </>
-                                )}
-                              </>
+                        <td className="hidden whitespace-nowrap px-4 py-3 text-sm md:table-cell">
+                          <label htmlFor={`row-${member.id}`} className="sr-only">Row for {member.name}</label>
+                          <div className="flex items-center gap-2">
+                            <select
+                              id={`row-${member.id}`}
+                              value={["fixed", "layer1", "layer2", "layer3"].includes(member.section ?? "") ? member.section! : "scrolling"}
+                              onChange={(e) => handleQuickSectionChange(member.id, e.target.value)}
+                              disabled={updatingSection === member.id}
+                              className="field w-auto min-w-[11rem] py-1.5"
+                            >
+                              {SECTIONS.map((o) => (
+                                <option key={o.value} value={o.value}>{o.label}</option>
+                              ))}
+                              <option value="scrolling" disabled>Not shown on the website</option>
+                            </select>
+                            {updatingSection === member.id && (
+                              <Loader2 className="h-4 w-4 animate-spin text-gray-500" aria-label="Saving" />
                             )}
                           </div>
                         </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">
-                          {format(new Date(member.created_at), "MMM dd, yyyy")}
-                        </td>
-                        <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                          <button
-                            onClick={() => handleEdit(member)}
-                            className="text-primary hover:text-primary-dark mr-4"
-                          >
-                            <Edit className="h-5 w-5" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(member.id)}
-                            className="text-red-600 hover:text-red-700"
-                          >
-                            <Trash2 className="h-5 w-5" />
-                          </button>
+                        <td className="whitespace-nowrap px-4 py-3 text-right">
+                          <div className="flex justify-end gap-1">
+                            <button type="button" onClick={() => handleEdit(member)} className="btn-row-edit">
+                              <Edit className="h-4 w-4" aria-hidden />
+                              Edit<span className="sr-only"> {member.name}</span>
+                            </button>
+                            <button type="button" onClick={() => handleDelete(member.id)} className="btn-row-delete">
+                              <Trash2 className="h-4 w-4" aria-hidden />
+                              Remove<span className="sr-only"> {member.name}</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -852,21 +663,21 @@ export default function BoardMembersPage() {
               setError("");
             }}
             title={
-              selectedMember ? "Edit Board Member" : "Add New Board Member"
+              selectedMember ? "Edit member" : "Add member"
             }
           >
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded text-sm">
+                <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
                   <strong>Error:</strong> {error}
                 </div>
               )}
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                <label htmlFor="board--name" className="label">
                   Name <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id="board--name"
                   type="text"
                   required
                   maxLength={100}
@@ -874,15 +685,15 @@ export default function BoardMembersPage() {
                   onChange={(e) =>
                     setFormData({ ...formData, name: e.target.value })
                   }
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
+                  className="field"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Designation <span className="text-red-500">*</span>
+                <label htmlFor="board--designation" className="label">
+                  Role <span className="text-red-500">*</span>
                 </label>
-                <input
+                <input id="board--designation"
                   type="text"
                   required
                   maxLength={100}
@@ -904,108 +715,28 @@ export default function BoardMembersPage() {
                       });
                     }
                   }}
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary"
-                  placeholder="e.g., President, Secretary, Treasurer"
+                  className="field"
+                  placeholder="For example: Vice President"
                 />
-                {getDefaultSection(formData.designation) === "fixed" && (
-                  <p className="text-xs text-blue-600 dark:text-blue-400 mt-1">
-                    ⚡ Auto-assigned to Fixed section (President/Secretary/Treasurer)
-                  </p>
-                )}
               </div>
 
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Section <span className="text-red-500">*</span>
-                  {getDefaultSection(formData.designation) === "fixed" && (
-                    <span className="ml-2 text-xs text-blue-600 dark:text-blue-400">
-                      (Auto-set for key roles, can be changed)
-                    </span>
-                  )}
-                </label>
-                <div className="relative">
-                  <button
-                    type="button"
-                    onClick={() => setIsFormSectionDropdownOpen(!isFormSectionDropdownOpen)}
-                    className="w-full text-left px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary flex items-center justify-between"
-                  >
-                    <span className="flex items-center gap-2">
-                       {formData.section === "fixed" ? (
-                        <>
-                          <div className="w-2 h-2 rounded-full bg-blue-500" />
-                          <span>Fixed Section (Top 3)</span>
-                        </>
-                      ) : formData.section === "layer1" ? (
-                        <>
-                          <div className="w-2 h-2 rounded-full bg-green-500" />
-                          <span>Scrolling Layer 1</span>
-                        </>
-                      ) : formData.section === "layer2" ? (
-                         <>
-                          <div className="w-2 h-2 rounded-full bg-purple-500" />
-                          <span>Scrolling Layer 2</span>
-                        </>
-                      ) : formData.section === "layer3" ? (
-                         <>
-                          <div className="w-2 h-2 rounded-full bg-orange-500" />
-                          <span>Scrolling Layer 3</span>
-                        </>
-                      ) : (
-                         <>
-                          <div className="w-2 h-2 rounded-full bg-gray-400" />
-                          <span>Auto-assign (Legacy)</span>
-                        </>
-                      )}
-                    </span>
-                    <ChevronDown className={`h-4 w-4 transition-transform ${isFormSectionDropdownOpen ? "rotate-180" : ""}`} />
-                  </button>
-
-                  {isFormSectionDropdownOpen && (
-                    <div className="absolute z-[100] w-full mt-1 bg-white dark:bg-gray-800 rounded-md shadow-2xl border border-gray-200 dark:border-gray-700 py-1 max-h-60 overflow-y-auto focus:outline-none animate-in fade-in zoom-in-95 duration-100 scrollbar-thin scrollbar-thumb-gray-300 dark:scrollbar-thumb-gray-600 scrollbar-track-transparent">
-                       {[
-                        { value: "fixed", label: "Fixed Section (Top 3)", color: "bg-blue-500", desc: "Always visible at top" },
-                        { value: "layer1", label: "Scrolling Layer 1", color: "bg-green-500", desc: "First scrolling row" },
-                        { value: "layer2", label: "Scrolling Layer 2", color: "bg-purple-500", desc: "Second scrolling row" },
-                        { value: "layer3", label: "Scrolling Layer 3", color: "bg-orange-500", desc: "Third scrolling row" },
-                        { value: "scrolling", label: "Auto-assign", color: "bg-gray-400", desc: "Legacy distribution" },
-                      ].map((option) => (
-                        <button
-                          key={option.value}
-                          type="button"
-                          onClick={() => {
-                            setFormData({ ...formData, section: option.value });
-                            setIsFormSectionDropdownOpen(false);
-                          }}
-                          className={`w-full text-left px-4 py-2 hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors flex items-center justify-between ${
-                            formData.section === option.value ? "bg-gray-50 dark:bg-gray-700/50" : ""
-                          }`}
-                        >
-                           <div className="flex flex-col">
-                             <div className="flex items-center gap-2">
-                               <div className={`w-2 h-2 rounded-full ${option.color}`} />
-                               <span className="text-sm font-medium text-gray-900 dark:text-white">
-                                 {option.label}
-                               </span>
-                             </div>
-                             <span className="text-xs text-gray-500 dark:text-gray-400 ml-4">
-                               {option.desc}
-                             </span>
-                           </div>
-                           {formData.section === option.value && (
-                              <Users className="h-4 w-4 text-primary" />
-                           )}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                  Fixed section shows first 3 members at top. Each layer scrolls independently.
-                  {getDefaultSection(formData.designation) === "fixed" && (
-                    <span className="block mt-1 text-blue-600 dark:text-blue-400">
-                      💡 You can manually change this if needed.
-                    </span>
-                  )}
+                <label htmlFor="board-row" className="label">Where they appear</label>
+                <select
+                  id="board-row"
+                  value={formData.section}
+                  onChange={(e) => setFormData({ ...formData, section: e.target.value })}
+                  className="field"
+                >
+                  {SECTIONS.map((o) => (
+                    <option key={o.value} value={o.value}>{o.label}</option>
+                  ))}
+                  {formData.section === "scrolling" && <option value="scrolling">Not shown on the website</option>}
+                </select>
+                <p className="hint">
+                  {SECTIONS.find((o) => o.value === formData.section)?.hint ??
+                    "Pick a row, otherwise this person won't appear on the website."}{" "}
+                  President, Secretary and Treasurer go in the top row automatically.
                 </p>
               </div>
 
@@ -1023,11 +754,11 @@ export default function BoardMembersPage() {
                 <button
                   type="submit"
                   disabled={submitting}
-                  className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-dark rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  className="px-4 py-2 text-sm font-medium text-on-primary bg-primary hover:bg-primary-dark rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
                 >
                   {submitting ? (
                     <>
-                      <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
+                      <Loader2 className="h-4 w-4 inline animate-spin mr-2" aria-hidden />
                       Saving...
                     </>
                   ) : (
@@ -1044,41 +775,51 @@ export default function BoardMembersPage() {
               setIsPasteModalOpen(false);
               setFetchError(null);
             }}
-            title="Import from Text"
+            title="Add many members at once"
           >
             <div className="space-y-4">
-              <p className="text-sm text-gray-500 dark:text-gray-400">
-                Paste your CSV content below. It must have headers: <code>name,designation,section</code>
+              <p className="text-base text-gray-700 dark:text-gray-300">
+                Paste one person per line as <code className="rounded bg-gray-100 px-1 dark:bg-gray-700">name,designation</code>, under a first line that says exactly that.
+                You can also add a third column, <code className="rounded bg-gray-100 px-1 dark:bg-gray-700">section</code>, to choose their row.
               </p>
+              <div className="flex flex-wrap gap-2">
+                <button type="button" onClick={() => fileInputRef.current?.click()} disabled={isImporting} className="btn-secondary">
+                  <Upload className="h-4 w-4" aria-hidden />
+                  Choose a CSV file instead
+                </button>
+                <a href="/board-members-template.csv" download className="btn-secondary">
+                  <Download className="h-4 w-4" aria-hidden />
+                  Download example file
+                </a>
+              </div>
               
               {fetchError && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded text-sm">
+                <div role="alert" className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-800 dark:text-red-300 px-4 py-3 rounded-lg text-sm">
                   <strong>Error:</strong> {fetchError}
                 </div>
               )}
 
+              <label htmlFor="board-paste" className="label">Members</label>
               <textarea
+                id="board-paste"
                 value={pasteContent}
                 onChange={(e) => setPasteContent(e.target.value)}
                 rows={10}
-                className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary font-mono text-xs whitespace-pre"
-                placeholder={`name,designation,section\nJohn Doe,President,fixed\nJane Smith,Member,scrolling`}
+                className="field font-mono text-sm whitespace-pre"
+                placeholder={`name,designation\nRtn. A. Ramesh,President\nRtn. S. Priya,Secretary`}
               />
 
               <div className="flex justify-end gap-3">
-                <button
-                  onClick={() => setIsPasteModalOpen(false)}
-                  className="px-4 py-2 border border-gray-300 dark:border-gray-600 rounded-md text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                >
+                <button type="button" onClick={() => setIsPasteModalOpen(false)} className="btn-secondary">
                   Cancel
                 </button>
                 <button
                   onClick={handlePasteImport}
                   disabled={isImporting || !pasteContent.trim()}
-                  className="inline-flex items-center px-4 py-2 border border-transparent rounded-md shadow-sm text-sm font-medium text-white bg-primary hover:bg-primary-dark focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn-primary"
                 >
-                  {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
-                  Parse & Import
+                  {isImporting && <Loader2 className="h-4 w-4 mr-2 animate-spin" aria-hidden />}
+                  Add these members
                 </button>
               </div>
             </div>
@@ -1091,9 +832,9 @@ export default function BoardMembersPage() {
               setDeleteTarget(null);
             }}
             onConfirm={confirmDelete}
-            title="Delete Board Member"
-            message="Are you sure you want to delete this board member? This action cannot be undone."
-            confirmText="Delete"
+            title="Remove this member?"
+            message="They will disappear from the website straight away. This can't be undone."
+            confirmText="Remove member"
             cancelText="Cancel"
             danger
           />

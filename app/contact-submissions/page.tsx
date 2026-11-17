@@ -2,6 +2,9 @@
 
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Layout } from "@/components/Layout";
+import { PageHeader } from "@/components/PageHeader";
+import { ConfirmDialog } from "@/components/ConfirmDialog";
+import { useToast } from "@/components/Toast";
 import { useEffect, useState, useMemo } from "react";
 import { api, convex, errorMessage, getToken } from "@/lib/convex";
 import {
@@ -36,6 +39,7 @@ interface ContactSubmission {
 type FilterType = "all" | "unread" | "read";
 
 export default function ContactSubmissionsPage() {
+  const toast = useToast();
   const [submissions, setSubmissions] = useState<ContactSubmission[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState("");
@@ -43,7 +47,6 @@ export default function ContactSubmissionsPage() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
-  const [deletePassword, setDeletePassword] = useState("");
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState<string | null>(null);
@@ -126,7 +129,6 @@ export default function ContactSubmissionsPage() {
 
   const handleDelete = (id: string) => {
     setDeleteTarget(id);
-    setDeletePassword("");
     setDeleteError(null);
     setIsDeleteDialogOpen(true);
   };
@@ -134,18 +136,11 @@ export default function ContactSubmissionsPage() {
   const closeDeleteDialog = () => {
     setIsDeleteDialogOpen(false);
     setDeleteTarget(null);
-    setDeletePassword("");
     setDeleteError(null);
   };
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
-
-    // Check password
-    if (deletePassword !== "confirm123") {
-      setDeleteError("Incorrect password. Please enter 'confirm123' to delete.");
-      return;
-    }
 
     setIsDeleting(true);
     setDeleteError(null);
@@ -156,9 +151,10 @@ export default function ContactSubmissionsPage() {
       // Refresh from database to ensure sync
       await fetchSubmissions();
       closeDeleteDialog();
+      toast.success("Message deleted.");
     } catch (err: any) {
       console.error("Error deleting submission:", err);
-      setDeleteError(errorMessage(err, "Failed to delete submission."));
+      toast.error(errorMessage(err, "Couldn't delete the message. Please try again."));
     } finally {
       setIsDeleting(false);
     }
@@ -229,145 +225,80 @@ export default function ContactSubmissionsPage() {
     <ProtectedRoute>
       <Layout>
         <div className="space-y-6">
-          {/* Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 dark:text-white">
-                Contact Submissions
-              </h1>
-              <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                View and manage contact form submissions
-              </p>
-            </div>
-          </div>
+          <PageHeader
+            title="Messages"
+            description="What people sent through the Contact Us form on the website. Opening a message marks it as read."
+            actions={
+              <button type="button" onClick={handleExportCSV} disabled={submissions.length === 0} className="btn-secondary">
+                <Download className="h-4 w-4" aria-hidden />
+                Download as spreadsheet
+              </button>
+            }
+          />
 
-          {/* Stats Bar */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center">
-                <div className="bg-blue-500 p-3 rounded-lg">
-                  <MessageSquare className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Total Messages
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {loading ? "-" : stats.total}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center">
-                <div className="bg-red-500 p-3 rounded-lg relative">
-                  <Mail className="h-6 w-6 text-white" />
-                  {stats.unread > 0 && (
-                    <span className="absolute -top-1 -right-1 bg-red-600 text-white text-xs font-bold rounded-full h-5 w-5 flex items-center justify-center ring-2 ring-white dark:ring-gray-800">
-                      {stats.unread > 9 ? "9+" : stats.unread}
-                    </span>
-                  )}
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    Unread
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {loading ? "-" : stats.unread}
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-4 border border-gray-200 dark:border-gray-700">
-              <div className="flex items-center">
-                <div className="bg-green-500 p-3 rounded-lg">
-                  <MessageSquare className="h-6 w-6 text-white" />
-                </div>
-                <div className="ml-4">
-                  <p className="text-sm font-medium text-gray-600 dark:text-gray-400">
-                    This Week
-                  </p>
-                  <p className="text-2xl font-bold text-gray-900 dark:text-white">
-                    {loading ? "-" : stats.thisWeek}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          {/* Filters and Search */}
-          <div className="flex flex-col sm:flex-row gap-4">
-            {/* Filter Toggles */}
-            <div className="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-600">
-              {(["all", "unread", "read"] as FilterType[]).map((f) => (
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <div role="group" aria-label="Show" className="inline-flex rounded-lg border border-gray-300 p-1 dark:border-gray-600">
+              {([
+                ["all", "All", stats.total],
+                ["unread", "Unread", stats.unread],
+                ["read", "Read", stats.total - stats.unread],
+              ] as [FilterType, string, number][]).map(([f, label, n]) => (
                 <button
                   key={f}
+                  type="button"
                   onClick={() => setFilter(f)}
-                  className={`px-4 py-2 text-sm font-medium capitalize transition-colors ${
+                  aria-pressed={filter === f}
+                  className={`tabular min-h-[36px] rounded-md px-3 text-sm font-medium transition-colors duration-150 ${
                     filter === f
-                      ? "bg-primary text-white"
-                      : "bg-white dark:bg-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-600"
+                      ? "bg-gray-900 text-white dark:bg-white dark:text-gray-900"
+                      : "text-gray-700 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700"
                   }`}
                 >
-                  {f}
+                  {label} {loading ? "" : n}
                 </button>
               ))}
             </div>
 
-            {/* Search */}
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-5 w-5 text-gray-400" />
+              <label htmlFor="messages-search" className="sr-only">Search messages</label>
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-gray-500" aria-hidden />
               <input
-                type="text"
-                placeholder="Search by name or phone..."
+                id="messages-search"
+                type="search"
+                placeholder="Search by name or phone"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 text-gray-900 dark:text-white placeholder-gray-500 dark:placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-primary"
+                className="field pl-10"
               />
             </div>
 
-            {/* Bulk Actions */}
-            <div className="flex gap-2">
-              <button
-                onClick={handleMarkAllAsRead}
-                disabled={stats.unread === 0 || actionLoading === "bulk"}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                {actionLoading === "bulk" ? (
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                ) : (
-                  <CheckCheck className="h-4 w-4 mr-2" />
-                )}
-                Mark All Read
-              </button>
-              <button
-                onClick={handleExportCSV}
-                disabled={submissions.length === 0}
-                className="inline-flex items-center px-4 py-2 border border-gray-300 dark:border-gray-600 text-sm font-medium rounded-lg text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-              >
-                <Download className="h-4 w-4 mr-2" />
-                Export CSV
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={handleMarkAllAsRead}
+              disabled={stats.unread === 0 || actionLoading === "bulk"}
+              className="btn-secondary"
+            >
+              {actionLoading === "bulk" ? (
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
+              ) : (
+                <CheckCheck className="h-4 w-4" aria-hidden />
+              )}
+              Mark all as read
+            </button>
           </div>
 
           {/* Error messages */}
           {error && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
-              <strong>Error:</strong> {error}
-              <button
-                onClick={() => setError(null)}
-                className="float-right text-red-700 dark:text-red-400 hover:text-red-900"
-              >
-                ×
+            <div role="alert" className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
+              <span>{error}</span>
+              <button type="button" onClick={() => setError(null)} className="btn -my-2 -mr-2 h-10 px-3 hover:bg-red-100 dark:hover:bg-red-900/40">
+                Dismiss
               </button>
             </div>
           )}
 
           {fetchError && (
-            <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-4 py-3 rounded">
+            <div role="alert" className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-800 dark:border-red-800 dark:bg-red-950 dark:text-red-200">
               <strong>Error fetching data:</strong> {fetchError}
             </div>
           )}
@@ -375,11 +306,11 @@ export default function ContactSubmissionsPage() {
           {/* Message List */}
           {loading ? (
             <div className="flex items-center justify-center py-12">
-              <Loader2 className="h-8 w-8 animate-spin text-primary" />
+              <Loader2 className="h-8 w-8 animate-spin text-primary" aria-hidden />
             </div>
           ) : fetchError ? (
             <div className="text-center py-12 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
-              <MessageSquare className="mx-auto h-12 w-12 text-red-400" />
+              <MessageSquare className="mx-auto h-12 w-12 text-red-400" aria-hidden />
               <h3 className="mt-2 text-sm font-medium text-red-600 dark:text-red-400">
                 Unable to load submissions
               </h3>
@@ -390,7 +321,7 @@ export default function ContactSubmissionsPage() {
           ) : filteredSubmissions.length === 0 ? (
             <div className="text-center py-16 bg-white dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
               <div className="mx-auto w-24 h-24 bg-gray-100 dark:bg-gray-700 rounded-full flex items-center justify-center mb-4">
-                <MessageSquare className="h-12 w-12 text-gray-400" />
+                <MessageSquare className="h-12 w-12 text-gray-400" aria-hidden />
               </div>
               <h3 className="text-lg font-medium text-gray-900 dark:text-white">
                 {submissions.length === 0
@@ -408,20 +339,22 @@ export default function ContactSubmissionsPage() {
               {filteredSubmissions.map((submission) => (
                 <div
                   key={submission.id}
-                  className={`bg-white dark:bg-gray-800 rounded-lg shadow border transition-all ${
+                  className={`rounded-xl border bg-white transition-colors duration-150 dark:bg-gray-800 ${
                     !submission.is_read
-                      ? "border-l-4 border-l-blue-500 border-gray-200 dark:border-gray-700"
+                      ? "border-gray-300 dark:border-gray-600"
                       : "border-gray-200 dark:border-gray-700"
                   }`}
                 >
                   {/* Card Header - Clickable to expand */}
                   <button
-                    onClick={() =>
-                      setExpandedId(
-                        expandedId === submission.id ? null : submission.id
-                      )
-                    }
-                    className="w-full text-left p-4 focus:outline-none focus:ring-2 focus:ring-primary focus:ring-inset rounded-lg"
+                    type="button"
+                    aria-expanded={expandedId === submission.id}
+                    onClick={() => {
+                      const opening = expandedId !== submission.id;
+                      setExpandedId(opening ? submission.id : null);
+                      if (opening && !submission.is_read) handleToggleReadStatus(submission);
+                    }}
+                    className="w-full rounded-lg p-4 text-left"
                   >
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
@@ -430,27 +363,27 @@ export default function ContactSubmissionsPage() {
                             {submission.name}
                           </h3>
                           {!submission.is_read && (
-                            <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                              NEW
+                            <span className="inline-flex items-center rounded-full bg-sky-100 px-2 py-0.5 text-sm font-medium text-sky-900 dark:bg-sky-900/40 dark:text-sky-200">
+                              Unread
                             </span>
                           )}
                         </div>
                         <div className="flex items-center gap-4 text-sm text-gray-600 dark:text-gray-400 mb-2">
                           <span className="flex items-center">
-                            <Phone className="h-4 w-4 mr-1" />
+                            <Phone className="h-4 w-4 mr-1" aria-hidden />
                             {submission.phone}
                           </span>
                           <span>{formatRelativeTime(submission.created_at)}</span>
                         </div>
-                        <p className="text-gray-600 dark:text-gray-400 line-clamp-2">
+                        <p className="line-clamp-2 text-base text-gray-700 dark:text-gray-300">
                           {submission.message}
                         </p>
                       </div>
                       <div className="ml-4 flex-shrink-0">
                         {expandedId === submission.id ? (
-                          <ChevronUp className="h-5 w-5 text-gray-400" />
+                          <ChevronUp className="h-5 w-5 text-gray-400" aria-hidden />
                         ) : (
-                          <ChevronDown className="h-5 w-5 text-gray-400" />
+                          <ChevronDown className="h-5 w-5 text-gray-400" aria-hidden />
                         )}
                       </div>
                     </div>
@@ -460,10 +393,7 @@ export default function ContactSubmissionsPage() {
                   {expandedId === submission.id && (
                     <div className="px-4 pb-4 border-t border-gray-100 dark:border-gray-700">
                       <div className="pt-4">
-                        <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
-                          Full Message:
-                        </h4>
-                        <p className="text-gray-600 dark:text-gray-400 whitespace-pre-wrap bg-gray-50 dark:bg-gray-900 p-3 rounded-lg">
+                        <p className="whitespace-pre-wrap text-base text-gray-800 dark:text-gray-200">
                           {submission.message}
                         </p>
                       </div>
@@ -476,16 +406,16 @@ export default function ContactSubmissionsPage() {
                             handleToggleReadStatus(submission);
                           }}
                           disabled={actionLoading === submission.id}
-                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 disabled:opacity-50 transition-colors"
+                          className="btn-secondary"
                         >
                           {actionLoading === submission.id ? (
-                            <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+                            <Loader2 className="h-4 w-4 animate-spin" aria-hidden />
                           ) : submission.is_read ? (
-                            <Mail className="h-4 w-4 mr-1.5" />
+                            <Mail className="h-4 w-4" aria-hidden />
                           ) : (
-                            <MailOpen className="h-4 w-4 mr-1.5" />
+                            <MailOpen className="h-4 w-4" aria-hidden />
                           )}
-                          {submission.is_read ? "Mark Unread" : "Mark Read"}
+                          {submission.is_read ? "Mark as unread" : "Mark as read"}
                         </button>
 
                         <button
@@ -493,17 +423,17 @@ export default function ContactSubmissionsPage() {
                             e.stopPropagation();
                             handleCopyPhone(submission.phone);
                           }}
-                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md border border-gray-300 dark:border-gray-600 text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
+                          className="btn-secondary"
                         >
                           {copiedPhone === submission.phone ? (
                             <>
-                              <Check className="h-4 w-4 mr-1.5 text-green-500" />
-                              Copied!
+                              <Check className="h-4 w-4" aria-hidden />
+                              Copied
                             </>
                           ) : (
                             <>
-                              <Copy className="h-4 w-4 mr-1.5" />
-                              Copy Phone
+                              <Copy className="h-4 w-4" aria-hidden />
+                              Copy number
                             </>
                           )}
                         </button>
@@ -513,21 +443,26 @@ export default function ContactSubmissionsPage() {
                             e.stopPropagation();
                             handleOpenWhatsApp(submission.phone);
                           }}
-                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md border border-green-500 text-green-600 dark:text-green-400 bg-white dark:bg-gray-700 hover:bg-green-50 dark:hover:bg-green-900/20 transition-colors"
+                          className="btn-secondary"
                         >
-                          <ExternalLink className="h-4 w-4 mr-1.5" />
+                          <ExternalLink className="h-4 w-4" aria-hidden />
                           WhatsApp
+                          <span className="sr-only">(opens in a new tab)</span>
                         </button>
+                        <a href={`tel:${submission.phone.replace(/[^\d+]/g, "")}`} className="btn-secondary">
+                          <Phone className="h-4 w-4" aria-hidden />
+                          Call
+                        </a>
 
                         <button
                           onClick={(e) => {
                             e.stopPropagation();
                             handleDelete(submission.id);
                           }}
-                          className="inline-flex items-center px-3 py-1.5 text-sm font-medium rounded-md border border-red-300 dark:border-red-700 text-red-600 dark:text-red-400 bg-white dark:bg-gray-700 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          className="btn border border-red-300 bg-white text-red-700 hover:bg-red-50 dark:border-red-800 dark:bg-gray-800 dark:text-red-300 dark:hover:bg-red-900/30 sm:ml-auto"
                         >
-                          <Trash2 className="h-4 w-4 mr-1.5" />
-                          Delete
+                          <Trash2 className="h-4 w-4" aria-hidden />
+                          Delete<span className="sr-only"> message from {submission.name}</span>
                         </button>
                       </div>
                     </div>
@@ -537,66 +472,15 @@ export default function ContactSubmissionsPage() {
             </div>
           )}
 
-          {/* Delete Confirmation Dialog with Password */}
-          <Modal
+          <ConfirmDialog
             isOpen={isDeleteDialogOpen}
             onClose={closeDeleteDialog}
-            title="Delete Submission"
-          >
-            <div className="space-y-4">
-              <p className="text-sm text-gray-600 dark:text-gray-400">
-                Are you sure you want to delete this contact submission? This action cannot be undone.
-              </p>
-              
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
-                  Enter password to confirm deletion:
-                </label>
-                <input
-                  type="password"
-                  value={deletePassword}
-                  onChange={(e) => setDeletePassword(e.target.value)}
-                  placeholder="Enter confirmation password"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-red-500"
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
-                      confirmDelete();
-                    }
-                  }}
-                />
-              </div>
-
-              {deleteError && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 text-red-700 dark:text-red-400 px-3 py-2 rounded text-sm">
-                  {deleteError}
-                </div>
-              )}
-
-              <div className="flex justify-end space-x-3 pt-2">
-                <button
-                  onClick={closeDeleteDialog}
-                  disabled={isDeleting}
-                  className="px-4 py-2 text-sm font-medium text-gray-700 dark:text-gray-300 bg-white dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-md hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={confirmDelete}
-                  disabled={isDeleting || !deletePassword}
-                  className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-md disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                >
-                  {isDeleting ? (
-                    <>
-                      <Loader2 className="h-4 w-4 inline animate-spin mr-2" />
-                      Deleting...
-                    </>
-                  ) : (
-                    "Delete"
-                  )}
-                </button>
-              </div>
-            </div>
-          </Modal>
+            onConfirm={confirmDelete}
+            title="Delete this message?"
+            message="You won't be able to get it back. Download a spreadsheet first if you need a copy."
+            confirmText="Delete message"
+            danger
+          />
         </div>
       </Layout>
     </ProtectedRoute>
